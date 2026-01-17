@@ -1,0 +1,48 @@
+{
+  "match_id": "3841796205",
+  "hero_id": 0,
+  "compression_params": {
+    "w_error": 1.1,
+    "max_error_threshold": 90.91
+  },
+  "statistics": {
+    "original_points": 3209,
+    "compressed_points": 3,
+    "num_segments": 2,
+    "compression_ratio_percent": 99.91,
+    "reduction_percent": 0.09,
+    "original_distance": 7729.59,
+    "compressed_distance": 236.85,
+    "distance_preserved_percent": 3.06
+  },
+  "segments": [
+    {
+      "id": 0,
+      "start": {
+        "x": 0.0,
+        "y": 0.0,
+        "tick": 23730
+      },
+      "end": {
+        "x": 96.0,
+        "y": 122.0,
+        "tick": 55860
+      },
+      "length": 155.24
+    },
+    {
+      "id": 1,
+      "start": {
+        "x": 96.0,
+        "y": 122.0,
+        "tick": 55860
+      },
+      "end": {
+        "x": 162.0,
+        "y": 170.0,
+        "tick": 119970
+      },
+      "length": 81.61
+    }
+  ]
+}

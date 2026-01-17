@@ -1,0 +1,76 @@
+{
+  "match_id": "3842426275",
+  "hero_id": 0,
+  "compression_params": {
+    "w_error": 1.1,
+    "max_error_threshold": 90.91
+  },
+  "statistics": {
+    "original_points": 1989,
+    "compressed_points": 5,
+    "num_segments": 4,
+    "compression_ratio_percent": 99.75,
+    "reduction_percent": 0.25,
+    "original_distance": 3522.48,
+    "compressed_distance": 347.01,
+    "distance_preserved_percent": 9.85
+  },
+  "segments": [
+    {
+      "id": 0,
+      "start": {
+        "x": 0.0,
+        "y": 0.0,
+        "tick": 23790
+      },
+      "end": {
+        "x": 120.0,
+        "y": 96.0,
+        "tick": 36870
+      },
+      "length": 153.67
+    },
+    {
+      "id": 1,
+      "start": {
+        "x": 120.0,
+        "y": 96.0,
+        "tick": 36870
+      },
+      "end": {
+        "x": 86.0,
+        "y": 176.0,
+        "tick": 56580
+      },
+      "length": 86.93
+    },
+    {
+      "id": 2,
+      "start": {
+        "x": 86.0,
+        "y": 176.0,
+        "tick": 56580
+      },
+      "end": {
+        "x": 72.0,
+        "y": 156.0,
+        "tick": 69570
+      },
+      "length": 24.41
+    },
+    {
+      "id": 3,
+      "start": {
+        "x": 72.0,
+        "y": 156.0,
+        "tick": 69570
+      },
+      "end": {
+        "x": 72.0,
+        "y": 74.0,
+        "tick": 83430
+      },
+      "length": 82.0
+    }
+  ]
+}

@@ -1,0 +1,34 @@
+{
+  "match_id": "3841665963",
+  "hero_id": 0,
+  "compression_params": {
+    "w_error": 0.1,
+    "max_error_threshold": 1000.0
+  },
+  "statistics": {
+    "original_points": 2589,
+    "compressed_points": 2,
+    "num_segments": 1,
+    "compression_ratio_percent": 99.92,
+    "reduction_percent": 0.08,
+    "original_distance": 6061.82,
+    "compressed_distance": 241.87,
+    "distance_preserved_percent": 3.99
+  },
+  "segments": [
+    {
+      "id": 0,
+      "start": {
+        "x": 0.0,
+        "y": 0.0,
+        "tick": 28290
+      },
+      "end": {
+        "x": 168.0,
+        "y": 174.0,
+        "tick": 105930
+      },
+      "length": 241.87
+    }
+  ]
+}

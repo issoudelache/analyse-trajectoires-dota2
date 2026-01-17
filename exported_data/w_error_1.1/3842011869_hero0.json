@@ -1,0 +1,118 @@
+{
+  "match_id": "3842011869",
+  "hero_id": 0,
+  "compression_params": {
+    "w_error": 1.1,
+    "max_error_threshold": 90.91
+  },
+  "statistics": {
+    "original_points": 2090,
+    "compressed_points": 8,
+    "num_segments": 7,
+    "compression_ratio_percent": 99.62,
+    "reduction_percent": 0.38,
+    "original_distance": 4168.97,
+    "compressed_distance": 538.63,
+    "distance_preserved_percent": 12.92
+  },
+  "segments": [
+    {
+      "id": 0,
+      "start": {
+        "x": 0.0,
+        "y": 0.0,
+        "tick": 19830
+      },
+      "end": {
+        "x": 162.0,
+        "y": 86.0,
+        "tick": 34290
+      },
+      "length": 183.41
+    },
+    {
+      "id": 1,
+      "start": {
+        "x": 162.0,
+        "y": 86.0,
+        "tick": 34290
+      },
+      "end": {
+        "x": 160.0,
+        "y": 98.0,
+        "tick": 40920
+      },
+      "length": 12.17
+    },
+    {
+      "id": 2,
+      "start": {
+        "x": 160.0,
+        "y": 98.0,
+        "tick": 40920
+      },
+      "end": {
+        "x": 128.0,
+        "y": 158.0,
+        "tick": 45030
+      },
+      "length": 68.0
+    },
+    {
+      "id": 3,
+      "start": {
+        "x": 128.0,
+        "y": 158.0,
+        "tick": 45030
+      },
+      "end": {
+        "x": 102.0,
+        "y": 164.0,
+        "tick": 49500
+      },
+      "length": 26.68
+    },
+    {
+      "id": 4,
+      "start": {
+        "x": 102.0,
+        "y": 164.0,
+        "tick": 49500
+      },
+      "end": {
+        "x": 160.0,
+        "y": 116.0,
+        "tick": 62730
+      },
+      "length": 75.29
+    },
+    {
+      "id": 5,
+      "start": {
+        "x": 160.0,
+        "y": 116.0,
+        "tick": 62730
+      },
+      "end": {
+        "x": 108.0,
+        "y": 168.0,
+        "tick": 70020
+      },
+      "length": 73.54
+    },
+    {
+      "id": 6,
+      "start": {
+        "x": 108.0,
+        "y": 168.0,
+        "tick": 70020
+      },
+      "end": {
+        "x": 70.0,
+        "y": 76.0,
+        "tick": 82500
+      },
+      "length": 99.54
+    }
+  ]
+}
