@@ -6,5 +6,7 @@ tests/tuning_results/
 exported_data/
 exported_data_mvc/
 visualizations_mvc/
+compressed_data/
+overlays/
 *.tar.gz
 *.log
