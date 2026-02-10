@@ -1,0 +1,353 @@
+"""
+Module de visualisation interactive des trajectoires Dota 2.
+Contient les fonctions pour afficher les trajectoires sur la carte avec des contrôles interactifs.
+"""
+
+import json
+from pathlib import Path
+import matplotlib.pyplot as plt
+import matplotlib.image as mpimg
+from matplotlib.patches import FancyArrowPatch
+from matplotlib.widgets import Slider
+import numpy as np
+
+# Couleurs pour les 10 joueurs
+PLAYER_COLORS = [
+    '#3498db', '#2ecc71', '#9b59b6', '#f39c12', '#e74c3c',
+    '#16a085', '#27ae60', '#8e44ad', '#d35400', '#c0392b'
+]
+
+
+def get_available_w_errors(data_dir):
+    """Récupère la liste des valeurs w_error disponibles."""
+    w_errors = []
+    for d in sorted(data_dir.iterdir()):
+        if d.is_dir() and d.name.startswith('w_error_'):
+            w_error_str = d.name.replace('w_error_', '')
+            try:
+                w_error = float(w_error_str)
+                w_errors.append(w_error)
+            except ValueError:
+                pass
+    return sorted(w_errors)
+
+
+def get_available_games(data_dir, w_error):
+    """Récupère la liste des game IDs disponibles pour un w_error donné."""
+    if w_error == int(w_error):
+        w_error_str = str(int(w_error))
+    else:
+        w_error_str = str(w_error)
+    
+    w_error_dir = data_dir / f"w_error_{w_error_str}"
+    if not w_error_dir.exists():
+        return []
+    
+    games = []
+    for f in sorted(w_error_dir.glob("*_compressed.json")):
+        game_id = f.stem.replace('_compressed', '')
+        games.append(game_id)
+    return games
+
+
+def load_compressed_data(data_dir, w_error, game_id):
+    """Charge les données compressées."""
+    if w_error == int(w_error):
+        w_error_str = str(int(w_error))
+    else:
+        w_error_str = str(w_error)
+    
+    json_path = data_dir / f"w_error_{w_error_str}" / f"{game_id}_compressed.json"
+    
+    if not json_path.exists():
+        w_error_str = str(float(w_error))
+        json_path = data_dir / f"w_error_{w_error_str}" / f"{game_id}_compressed.json"
+    
+    if not json_path.exists():
+        raise FileNotFoundError(f"Fichier non trouvé: {json_path}")
+    
+    with open(json_path, 'r') as f:
+        return json.load(f)
+
+
+class InteractiveOverlay:
+    """Visualisation interactive avec slider temporel."""
+    
+    def __init__(self, canvas_path, data_dir, w_error, game_id):
+        self.w_error = w_error
+        self.game_id = game_id
+        
+        # Charger les données
+        canvas_full = mpimg.imread(canvas_path)
+        self.data = load_compressed_data(data_dir, w_error, game_id)
+        
+        # Recadrer canvas pour obtenir la partie carrée (933x933 au centre)
+        height, width = canvas_full.shape[:2]
+        if width > height:
+            left = (width - height) // 2
+            self.canvas = canvas_full[:, left:left + height]
+        else:
+            self.canvas = canvas_full
+        
+        # Flip vertical pour avoir l'origine en bas à gauche
+        self.canvas = np.flipud(self.canvas)
+        
+        # Extraire les segments et trouver les bornes temporelles
+        self.player_segments = {}
+        self.min_tick = float('inf')
+        self.max_tick = 0
+        
+        for player in self.data['players']:
+            player_id = player['player_id']
+            segments = []
+            
+            for seg in player['segments']:
+                segments.append({
+                    'start': seg['start'],
+                    'end': seg['end']
+                })
+                self.min_tick = min(self.min_tick, seg['start']['tick'], seg['end']['tick'])
+                self.max_tick = max(self.max_tick, seg['start']['tick'], seg['end']['tick'])
+            
+            self.player_segments[player_id] = segments
+        
+        # Initialiser la figure
+        self.setup_figure()
+    
+    def setup_figure(self):
+        """Configure la figure et les contrôles."""
+        self.fig, self.ax = plt.subplots(figsize=(12, 12))
+        plt.subplots_adjust(bottom=0.15)
+        
+        # Afficher la carte
+        self.ax.imshow(self.canvas, extent=[0, 256, 0, 256], aspect='auto')
+        self.ax.set_xlim(0, 256)
+        self.ax.set_ylim(0, 256)
+        self.ax.set_aspect('equal')
+        
+        # Titre
+        self.ax.set_title(
+            f'Match {self.game_id} - w_error={self.w_error}\n'
+            f'Utiliser le slider pour avancer dans le temps',
+            fontsize=14, fontweight='bold'
+        )
+        
+        # Slider temporel
+        ax_slider = plt.axes([0.15, 0.05, 0.7, 0.03])
+        self.slider = Slider(
+            ax_slider, 'Temps', 
+            self.min_tick, self.max_tick,
+            valinit=self.min_tick,
+            valstep=30
+        )
+        self.slider.on_changed(self.update)
+        
+        # Variables d'état pour zoom/pan
+        self.zoom_level = 1.0
+        self.pan_x = 128
+        self.pan_y = 128
+        
+        # Événements
+        self.fig.canvas.mpl_connect('scroll_event', self.on_scroll)
+        self.fig.canvas.mpl_connect('button_press_event', self.on_press)
+        self.fig.canvas.mpl_connect('button_release_event', self.on_release)
+        self.fig.canvas.mpl_connect('motion_notify_event', self.on_motion)
+        self.fig.canvas.mpl_connect('key_press_event', self.on_key)
+        
+        self.dragging = False
+        self.drag_start = None
+        
+        # Dessiner l'état initial
+        self.update(self.min_tick)
+    
+    def update(self, current_tick):
+        """Met à jour l'affichage pour le tick actuel."""
+        # Effacer les segments et points précédents
+        for artist in self.ax.lines + self.ax.collections:
+            artist.remove()
+        
+        current_positions = {}
+        
+        # Dessiner les segments jusqu'au tick actuel
+        for player_id, segments in self.player_segments.items():
+            color = PLAYER_COLORS[player_id % len(PLAYER_COLORS)]
+            
+            for seg in segments:
+                start_tick = seg['start']['tick']
+                end_tick = seg['end']['tick']
+                
+                # Segment complètement dans le passé
+                if end_tick <= current_tick:
+                    self.ax.plot(
+                        [seg['start']['x'], seg['end']['x']],
+                        [seg['start']['y'], seg['end']['y']],
+                        color=color, linewidth=2, alpha=0.7
+                    )
+                    current_positions[player_id] = (seg['end']['x'], seg['end']['y'])
+                
+                # Segment en cours
+                elif start_tick <= current_tick < end_tick:
+                    # Interpolation linéaire
+                    ratio = (current_tick - start_tick) / (end_tick - start_tick)
+                    x_current = seg['start']['x'] + ratio * (seg['end']['x'] - seg['start']['x'])
+                    y_current = seg['start']['y'] + ratio * (seg['end']['y'] - seg['start']['y'])
+                    
+                    # Dessiner la partie complétée
+                    self.ax.plot(
+                        [seg['start']['x'], x_current],
+                        [seg['start']['y'], y_current],
+                        color=color, linewidth=2, alpha=0.7
+                    )
+                    current_positions[player_id] = (x_current, y_current)
+        
+        # Afficher les positions actuelles
+        for player_id, (x, y) in current_positions.items():
+            color = PLAYER_COLORS[player_id % len(PLAYER_COLORS)]
+            self.ax.plot(x, y, 'o', color=color, markersize=12, 
+                        markeredgecolor='white', markeredgewidth=2, zorder=10)
+        
+        # Afficher le temps
+        minutes = int((current_tick / 30) // 60)
+        seconds = int((current_tick / 30) % 60)
+        self.ax.text(0.02, 0.98, f'Temps: {minutes:02d}:{seconds:02d}',
+                    transform=self.ax.transAxes,
+                    fontsize=14, fontweight='bold',
+                    verticalalignment='top',
+                    bbox=dict(boxstyle='round', facecolor='white', alpha=0.8))
+        
+        self.fig.canvas.draw_idle()
+    
+    def on_scroll(self, event):
+        """Gère le zoom avec la molette."""
+        if event.inaxes != self.ax:
+            return
+        
+        zoom_factor = 1.2 if event.button == 'up' else 1/1.2
+        self.zoom_level *= zoom_factor
+        
+        # Limites de zoom
+        self.zoom_level = max(1.0, min(self.zoom_level, 10.0))
+        
+        # Calculer la taille de la vue
+        view_size = 256 / self.zoom_level
+        half_size = view_size / 2
+        
+        self.ax.set_xlim(self.pan_x - half_size, self.pan_x + half_size)
+        self.ax.set_ylim(self.pan_y - half_size, self.pan_y + half_size)
+        self.fig.canvas.draw_idle()
+    
+    def on_press(self, event):
+        """Début du drag."""
+        if event.inaxes == self.ax and event.button == 1:
+            self.dragging = True
+            self.drag_start = (event.xdata, event.ydata)
+    
+    def on_release(self, event):
+        """Fin du drag."""
+        self.dragging = False
+        self.drag_start = None
+    
+    def on_motion(self, event):
+        """Gère le déplacement (pan)."""
+        if self.dragging and event.inaxes == self.ax and self.drag_start:
+            dx = self.drag_start[0] - event.xdata
+            dy = self.drag_start[1] - event.ydata
+            
+            self.pan_x += dx
+            self.pan_y += dy
+            
+            # Limites de pan
+            self.pan_x = max(0, min(256, self.pan_x))
+            self.pan_y = max(0, min(256, self.pan_y))
+            
+            view_size = 256 / self.zoom_level
+            half_size = view_size / 2
+            
+            self.ax.set_xlim(self.pan_x - half_size, self.pan_x + half_size)
+            self.ax.set_ylim(self.pan_y - half_size, self.pan_y + half_size)
+            self.fig.canvas.draw_idle()
+    
+    def on_key(self, event):
+        """Gère les raccourcis clavier."""
+        if event.key == 'r':
+            # Reset
+            self.zoom_level = 1.0
+            self.pan_x = 128
+            self.pan_y = 128
+            self.ax.set_xlim(0, 256)
+            self.ax.set_ylim(0, 256)
+            self.fig.canvas.draw_idle()
+        elif event.key == 's':
+            # Sauvegarder
+            output_path = Path('output/overlays') / f'{self.game_id}_w{self.w_error}_interactive.png'
+            output_path.parent.mkdir(parents=True, exist_ok=True)
+            self.fig.savefig(output_path, dpi=150, bbox_inches='tight')
+            print(f"✅ Sauvegardé: {output_path}")
+    
+    def show(self):
+        """Affiche la visualisation."""
+        plt.show()
+
+
+def generate_static_overlay(canvas_path, data_dir, w_error, game_id, output_path):
+    """Génère un overlay statique (sans interactivité)."""
+    # Charger données
+    canvas_full = mpimg.imread(canvas_path)
+    data = load_compressed_data(data_dir, w_error, game_id)
+    
+    # Recadrer canvas
+    height, width = canvas_full.shape[:2]
+    if width > height:
+        left = (width - height) // 2
+        canvas = canvas_full[:, left:left + height]
+    else:
+        canvas = canvas_full
+    
+    canvas = np.flipud(canvas)
+    
+    # Créer figure
+    fig, ax = plt.subplots(figsize=(12, 12))
+    ax.imshow(canvas, extent=[0, 256, 0, 256], aspect='auto')
+    ax.set_xlim(0, 256)
+    ax.set_ylim(0, 256)
+    ax.set_aspect('equal')
+    ax.set_title(f'Match {game_id} - Compression MDL (w_error={w_error})',
+                fontsize=14, fontweight='bold')
+    
+    # Dessiner tous les segments
+    for player in data['players']:
+        player_id = player['player_id']
+        color = PLAYER_COLORS[player_id % len(PLAYER_COLORS)]
+        
+        for seg in player['segments']:
+            x1, y1 = seg['start']['x'], seg['start']['y']
+            x2, y2 = seg['end']['x'], seg['end']['y']
+            
+            ax.plot([x1, x2], [y1, y2], 
+                   color=color, linewidth=2, alpha=0.7)
+            
+            # Flèche directionnelle
+            arrow = FancyArrowPatch(
+                (x1, y1), (x2, y2),
+                arrowstyle='->', mutation_scale=15,
+                color=color, alpha=0.5, linewidth=1
+            )
+            ax.add_patch(arrow)
+        
+        # Point de départ
+        if player['segments']:
+            first_seg = player['segments'][0]
+            ax.plot(first_seg['start']['x'], first_seg['start']['y'],
+                   'o', color=color, markersize=10,
+                   markeredgecolor='white', markeredgewidth=2,
+                   label=f'Joueur {player_id}')
+    
+    ax.legend(loc='upper right', fontsize=8, framealpha=0.9)
+    ax.grid(True, alpha=0.2, linestyle='--')
+    
+    # Sauvegarder
+    plt.tight_layout()
+    plt.savefig(output_path, dpi=150, bbox_inches='tight')
+    plt.close()
+    
+    return output_path

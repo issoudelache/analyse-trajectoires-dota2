@@ -16,7 +16,7 @@ from typing import List, Dict
 import numpy as np
 import pandas as pd
 
-from ..models.structures import Trajectory, TrajectoryPoint, Segment
+from .structures import Trajectory, TrajectoryPoint, Segment
 from .geometry import GeometryUtils
 
 
