@@ -9,7 +9,7 @@ Usage:
     python run.py visualize-batch [--w_errors 12,13,15]
     python run.py zoom-proof [--match_id 3841665963] [--w_error 12]
     python run.py overlay --w_error 12 --match_id 3841893562 [--interactive]
-    python run.py cluster --w_error 12
+    python run.py cluster --w_error 12 --max_files 10
 """
 
 import argparse
@@ -23,6 +23,7 @@ from dota_analytics.plotting import (
     InteractiveOverlay, generate_static_overlay,
     get_available_w_errors, get_available_games
 )
+from dota_analytics.clustering import run_clustering
 
 import pandas as pd
 import matplotlib
@@ -72,7 +73,7 @@ def compress_single_match(csv_path, w_error, output_base):
         df = pd.read_csv(csv_path)
         
         # Compresser les 10 joueurs
-        results = process_full_match(df, w_error)
+        results = process_full_match(df, match_id, w_error=w_error)
         
         # Calculer statistiques
         total_orig = sum(len(df[f'x{i}']) for i in range(10) 
@@ -637,13 +638,37 @@ def cmd_overlay_select(args):
 def cmd_cluster(args):
     """Lance le clustering."""
     print("=" * 70)
-    print("CLUSTERING")
+    print("CLUSTERING (CUSTOM AFFINITY PROPAGATION)")
     print("=" * 70)
-    print(f"w_error: {args.w_error}")
     
-    # Note: Cette fonctionnalité utilise dota_analytics/core/main_clustering.py
-    print("\n💡 Utilisez le script de clustering:")
-    print("   cd dota_analytics/core && python main_clustering.py")
+    # 1. On construit les deux noms de dossiers possibles
+    # Cas A : w_error_12 (entier)
+    name_int = f"w_error_{int(args.w_error)}"
+    # Cas B : w_error_12.0 (float - c'est ton cas actuel)
+    name_float = f"w_error_{float(args.w_error)}"
+    
+    path_int = COMPRESSED_DIR / name_int
+    path_float = COMPRESSED_DIR / name_float
+    
+    # 2. On vérifie lequel existe
+    if path_float.exists():
+        target_folder = path_float
+        print(f"✅ Dossier trouvé : {target_folder.name}")
+    elif path_int.exists():
+        target_folder = path_int
+        print(f"✅ Dossier trouvé : {target_folder.name}")
+    else:
+        print(f"❌ Dossier introuvable.")
+        print(f"   J'ai cherché : {path_int}")
+        print(f"   ET aussi     : {path_float}")
+        print(f"💡 Lancez d'abord: python run.py compress-batch --w_errors {args.w_error}")
+        return
+
+    if args.max_files:
+        print(f"⚠️  Mode test : Limite de {args.max_files} fichiers.")
+    
+    # Lancement avec l'option de limitation
+    run_clustering(target_folder, max_files=args.max_files)
 
 
 # =============================================================================
@@ -666,6 +691,8 @@ Exemples:
   
   python run.py zoom-proof --w_error 12
   python run.py overlay --w_error 12 --match_id 3841893562
+  
+  python run.py cluster --w_error 12 --max_files 5
         """
     )
     
@@ -722,6 +749,8 @@ Exemples:
     parser_cluster = subparsers.add_parser('cluster', help='Lancer clustering')
     parser_cluster.add_argument('--w_error', type=float, required=True,
                                help='Paramètre de compression')
+    parser_cluster.add_argument('--max_files', type=int, default=None,
+                               help='Nombre maximum de fichiers à traiter')
     
     args = parser.parse_args()
     

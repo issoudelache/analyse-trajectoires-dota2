@@ -121,6 +121,47 @@ class GeometryUtils:
         
         return float(np.arccos(cos_angle))
 
+    @staticmethod
+    def parallel_distance(s1_start, s1_end, s2_start, s2_end) -> float:
+        """
+        Calcule la distance parallèle (projection) entre deux segments.
+        Formule TRACLUS : min(proj(p_start), proj(p_end))
+        """
+        s1_s = np.asarray(s1_start, dtype=np.float64)
+        s1_e = np.asarray(s1_end, dtype=np.float64)
+        s2_s = np.asarray(s2_start, dtype=np.float64)
+        s2_e = np.asarray(s2_end, dtype=np.float64)
+
+        # Calcul des longueurs
+        len1 = np.linalg.norm(s1_e - s1_s)
+        len2 = np.linalg.norm(s2_e - s2_s)
+
+        # On projette toujours le segment le plus court sur le plus long
+        if len1 > len2:
+            base_s, base_e = s1_s, s1_e
+            other_s, other_e = s2_s, s2_e
+            base_len = len1
+        else:
+            base_s, base_e = s2_s, s2_e
+            other_s, other_e = s1_s, s1_e
+            base_len = len2
+
+        if base_len < 1e-9:
+            return 0.0
+
+        # Vecteur unitaire de la base
+        u = (base_e - base_s) / base_len
+
+        # Vecteurs reliant les débuts et les fins
+        ps_vec = other_s - base_s
+        pe_vec = other_e - base_e
+
+        # Projections
+        d1 = np.abs(np.dot(ps_vec, u))
+        d2 = np.abs(np.dot(pe_vec, u))
+
+        return min(d1, d2)
+
 
 # Rétrocompatibilité: exposition comme fonctions au niveau module
 euclidean_distance = GeometryUtils.euclidean_distance

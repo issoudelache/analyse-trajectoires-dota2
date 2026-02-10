@@ -1,95 +1,122 @@
 import json
-import glob
-import os
 import numpy as np
-from sklearn.cluster import AffinityPropagation
+import os
+from pathlib import Path
 
-# Import de tes classes (assure-toi que geometry.py et structures.py sont bien là)
-from structures import Segment, TrajectoryPoint
-from clustering_utils import SegmentDistance
+# Imports locaux
+from .custom_ap import CustomAffinityPropagation
+from .structures import Segment, TrajectoryPoint
+from .geometry import GeometryUtils
 
-def load_data(folder_path, limit=5000):
+def compute_total_distance(s1: Segment, s2: Segment, w_perp=1.0, w_angle=1.0, w_par=1.0) -> float:
     """
-    Charge les segments depuis le nouveau format JSON (Match -> Players -> Segments).
+    Calcule la distance composite (TRACLUS) directement ici.
+    Combine : Angulaire + Parallèle + Perpendiculaire
     """
-    # Recherche des fichiers JSON
-    search_path = os.path.join(folder_path, "*.json")
-    files = glob.glob(search_path)
+    geo = GeometryUtils()
+    
+    # 1. Distance Angulaire
+    v1 = s1.vector()
+    v2 = s2.vector()
+    # Pondération par la longueur pour favoriser les longs segments similaires
+    d_angle = geo.angular_distance(v1, v2) * (s1.length() + s2.length())
+
+    # 2. Distance Parallèle (Maintenant dans geometry.py)
+    d_par = geo.parallel_distance(
+        (s1.start.x, s1.start.y), (s1.end.x, s1.end.y),
+        (s2.start.x, s2.start.y), (s2.end.x, s2.end.y)
+    )
+
+    # 3. Distance Perpendiculaire (TRACLUS Standard)
+    # On projette le plus court sur le plus long
+    if s1.length() > s2.length():
+        base, other = s1, s2
+    else:
+        base, other = s2, s1
+        
+    d_perp_1 = geo.perpendicular_distance(
+        (other.start.x, other.start.y), 
+        (base.start.x, base.start.y), (base.end.x, base.end.y)
+    )
+    d_perp_2 = geo.perpendicular_distance(
+        (other.end.x, other.end.y), 
+        (base.start.x, base.start.y), (base.end.x, base.end.y)
+    )
+    
+    if d_perp_1 + d_perp_2 == 0:
+        d_perp = 0.0
+    else:
+        # Moyenne quadratique pour pénaliser les gros écarts
+        d_perp = (d_perp_1**2 + d_perp_2**2) / (d_perp_1 + d_perp_2)
+
+    return w_perp * d_perp + w_angle * d_angle + w_par * d_par
+
+def load_data(folder_path, limit=3000, max_files=None):
+    """Charge les segments. max_files limite le nombre de fichiers JSON lus."""
+    folder = Path(folder_path)
+    
+    # On récupère tous les fichiers et on les trie pour que ce soit toujours les mêmes
+    files = sorted(list(folder.glob("*.json")))
+    
+    print(f"📂 Recherche dans : {folder}")
+    print(f"   -> {len(files)} fichiers disponibles au total.")
+
+    # --- NOUVELLE LOGIQUE ICI ---
+    if max_files is not None and max_files < len(files):
+        files = files[:max_files]
+        print(f"   ⚠️  Restriction : On ne charge que les {max_files} premiers fichiers.")
+    # ----------------------------
     
     all_segments = []
     metadata = [] 
     
-    print(f"📂 Recherche dans : {folder_path}")
-    print(f"   -> {len(files)} fichiers trouvés.")
-    
     if len(files) == 0:
-        print("⚠️  Aucun fichier trouvé ! Vérifiez le chemin (ex: compressed_data/w_error_12).")
         return [], []
     
-    for file in files:
-        with open(file, 'r') as f:
+    for file_path in files:
+        with open(file_path, 'r') as f:
             try:
                 data = json.load(f)
             except json.JSONDecodeError:
-                print(f"❌ Erreur de lecture : {file}")
                 continue
 
             match_id = str(data.get('match_id', 'unknown'))
-            
-            # --- NOUVEAU PARSING ---
-            # On parcourt chaque joueur
-            if 'players' not in data:
-                continue
+            if 'players' not in data: continue
 
             for player in data['players']:
                 p_id = player['player_id']
-                
-                # On parcourt les segments du joueur
                 for idx, s in enumerate(player['segments']):
-                    
-                    # On crée un ID unique artificiel : P<id_joueur>_<index_segment>
-                    # Ex: P0_12 (Joueur 0, segment 12)
                     unique_seg_id = f"P{p_id}_{idx}"
-
-                    # Création de l'objet Segment
                     try:
                         p1 = TrajectoryPoint(s['start']['x'], s['start']['y'], s['start']['tick'])
                         p2 = TrajectoryPoint(s['end']['x'], s['end']['y'], s['end']['tick'])
                         seg = Segment(p1, p2)
                         
-                        # Filtre bruit (optionnel, à ajuster selon tes besoins)
                         if seg.length() > 5.0:
                             all_segments.append(seg)
-                            # On stocke l'ID unique qu'on vient de créer
-                            metadata.append({
-                                'match_id': match_id, 
-                                'seg_id': unique_seg_id 
-                            })
-                            
-                    except KeyError as e:
-                        print(f"⚠️ Segment malformé dans {file}: {e}")
+                            metadata.append({'match_id': match_id, 'seg_id': unique_seg_id})
+                    except KeyError:
                         continue
 
-            # Sécurité mémoire (on arrête si on a trop de segments pour le test)
+            # On garde aussi la limite de segments pour éviter l'explosion mémoire
             if len(all_segments) > limit:
-                print(f"⚠️  Limite atteinte ({limit} segments). Arrêt du chargement.")
+                print(f"⚠️ Limite de segments ({limit}) atteinte. On arrête le chargement.")
                 return all_segments[:limit], metadata[:limit]
     
     return all_segments, metadata
 
-def run_clustering(target_folder):
-    # 1. Chargement
-    segments, meta = load_data(target_folder)
-    
+def run_clustering(target_folder, max_files=None):
+    # On passe le paramètre max_files à load_data
+    segments, meta = load_data(target_folder, max_files=max_files)
     n = len(segments)
+    
     if n == 0:
-        print("❌ Aucun segment chargé. Vérifiez vos dossiers.")
+        print("❌ Aucun segment chargé.")
         return
 
     print(f"📊 Analyse de {n} segments...")
 
     # 2. Matrice de Distance
-    calculator = SegmentDistance()
     similarity_matrix = np.zeros((n, n))
 
     print("🔄 Calcul des distances en cours...")
@@ -99,7 +126,9 @@ def run_clustering(target_folder):
     
     for i in range(n):
         for j in range(i + 1, n):
-            dist = calculator.compute_total_distance(segments[i], segments[j])
+            # APPEL DE LA FONCTION LOCALE
+            dist = compute_total_distance(segments[i], segments[j])
+            
             sim = -dist
             similarity_matrix[i, j] = sim
             similarity_matrix[j, i] = sim
@@ -108,16 +137,19 @@ def run_clustering(target_folder):
             if count % milestone == 0:
                 print(f"   Progression : {int(count/total_calculations*100)}%")
 
+    # Remplissage diagonale (médiane)
     med = np.median(similarity_matrix)
     np.fill_diagonal(similarity_matrix, med)
 
-    # 3. Clustering
-    print("🧠 Lancement Affinity Propagation...")
-    af = AffinityPropagation(affinity='precomputed', damping=0.9, random_state=42)
+    # 3. Clustering (Custom AP)
+    print("🧠 Lancement Affinity Propagation (Custom)...")
+    
+    # Instanciation de notre algo maison
+    af = CustomAffinityPropagation(damping=0.9, max_iter=400, verbose=True)
     af.fit(similarity_matrix)
 
     labels = af.labels_
-    n_clusters = len(af.cluster_centers_indices_)
+    n_clusters = len(af.cluster_centers_indices_) if af.cluster_centers_indices_ is not None else 0
     
     print(f"\n✅ TERMINÉ ! {n_clusters} clusters trouvés.")
 
@@ -125,32 +157,19 @@ def run_clustering(target_folder):
     results = {}
     for idx, label in enumerate(labels):
         m_id = meta[idx]['match_id']
-        s_id = meta[idx]['seg_id'] # C'est notre ID "P0_12"
+        s_id = meta[idx]['seg_id']
         
-        if m_id not in results:
-            results[m_id] = {}
-        
+        if m_id not in results: results[m_id] = {}
         results[m_id][s_id] = int(label)
 
-    OUTPUT_DIR = "clusters"
-    os.makedirs(OUTPUT_DIR, exist_ok=True)
+    OUTPUT_DIR = Path("output/clusters")
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
 
-    folder_name = os.path.basename(os.path.normpath(target_folder))
+    folder_name = Path(target_folder).name
     filename = f"clusters_result_{folder_name}.json"
-    full_output_path = os.path.join(OUTPUT_DIR, filename)
+    full_output_path = OUTPUT_DIR / filename
     
     with open(full_output_path, "w") as f:
         json.dump(results, f, indent=2)
     
     print(f"💾 Résultats sauvegardés dans : {full_output_path}")
-
-if __name__ == "__main__":
-    # Mise à jour avec ton nouveau dossier
-    DOSSIER_A_ANALYSER = "compressed_data/w_error_12"
-    
-    # Vérification que le dossier existe
-    if not os.path.exists(DOSSIER_A_ANALYSER):
-        print(f"❌ Le dossier '{DOSSIER_A_ANALYSER}' n'existe pas !")
-        print("   -> Vérifie que tu es bien à la racine du projet.")
-    else:
-        run_clustering(DOSSIER_A_ANALYSER)
