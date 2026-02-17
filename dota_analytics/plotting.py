@@ -89,9 +89,6 @@ class InteractiveOverlay:
         else:
             self.canvas = canvas_full
         
-        # Flip vertical pour avoir l'origine en bas à gauche
-        self.canvas = np.flipud(self.canvas)
-        
         # Extraire les segments et trouver les bornes temporelles
         self.player_segments = {}
         self.min_tick = float('inf')
@@ -119,8 +116,12 @@ class InteractiveOverlay:
         self.fig, self.ax = plt.subplots(figsize=(12, 12))
         plt.subplots_adjust(bottom=0.15)
         
-        # Afficher la carte
-        self.ax.imshow(self.canvas, extent=[0, 256, 0, 256], aspect='auto')
+        # --- CORRECTION SENS CARTE ---
+        # origin='upper' (défaut) met le pixel [0,0] en haut. 
+        # extent=[0,256,0,256] mappe le bas de l'image à y=0 et le haut à y=256.
+        # Cela remet la base Radiant (Bas de l'image) en Bas du graphe.
+        self.ax.imshow(self.canvas, extent=[0, 256, 0, 256], origin='upper')
+        
         self.ax.set_xlim(0, 256)
         self.ax.set_ylim(0, 256)
         self.ax.set_aspect('equal')
@@ -303,14 +304,15 @@ def generate_static_overlay(canvas_path, data_dir, w_error, game_id, output_path
     else:
         canvas = canvas_full
     
-    canvas = np.flipud(canvas)
-    
     # Créer figure
     fig, ax = plt.subplots(figsize=(12, 12))
-    ax.imshow(canvas, extent=[0, 256, 0, 256], aspect='auto')
+    
+    # --- CORRECTION SENS CARTE ---
+    # origin='upper' (défaut) met le haut de l'image (Dire) en haut.
+    ax.imshow(canvas, extent=[0, 256, 0, 256], origin='upper', aspect='equal')
+    
     ax.set_xlim(0, 256)
     ax.set_ylim(0, 256)
-    ax.set_aspect('equal')
     ax.set_title(f'Match {game_id} - Compression MDL (w_error={w_error})',
                 fontsize=14, fontweight='bold')
     
@@ -351,3 +353,100 @@ def generate_static_overlay(canvas_path, data_dir, w_error, game_id, output_path
     plt.close()
     
     return output_path
+
+def plot_cluster_on_map(canvas_path, clusters_file, compressed_dir_path, cluster_id):
+    """
+    Visualise tous les segments appartenant au cluster K sur la carte du jeu (Mode Fenêtre).
+    """
+    # 1. Chargement de la carte
+    if not canvas_path.exists():
+        print(f"❌ Carte introuvable : {canvas_path}")
+        return
+
+    canvas_full = mpimg.imread(canvas_path)
+    height, width = canvas_full.shape[:2]
+    if width > height:
+        left = (width - height) // 2
+        canvas = canvas_full[:, left:left + height]
+    else:
+        canvas = canvas_full
+
+    # 2. Chargement du fichier de résultats des clusters
+    print(f"📖 Lecture des clusters : {clusters_file}")
+    with open(clusters_file, 'r') as f:
+        cluster_data = json.load(f)
+
+    # 3. Récupération des segments du Cluster K
+    # Structure : { match_id: { "P0_12": cluster_label, ... } }
+    segments_locations = {} # { match_id: [list_of_segment_ids] }
+
+    for match_id, segments_dict in cluster_data.items():
+        for seg_id, label in segments_dict.items():
+            if label == cluster_id:
+                if match_id not in segments_locations:
+                    segments_locations[match_id] = []
+                segments_locations[match_id].append(seg_id)
+
+    if not segments_locations:
+        print(f"⚠️  Aucun segment trouvé pour le Cluster {cluster_id} !")
+        return
+
+    print(f"🔍 Cluster {cluster_id} : Trouvé dans {len(segments_locations)} matchs.")
+
+    # 4. Chargement des coordonnées depuis les fichiers compressés
+    count_segments = 0
+    
+    plt.figure(figsize=(10, 10))
+    
+    # --- CORRECTION SENS CARTE ---
+    # On utilise origin='upper' (défaut) pour que le haut de l'image soit en haut du graphe (y=256)
+    # Si on utilisait 'lower', l'image serait inversée verticalement.
+    plt.imshow(canvas, extent=[0, 256, 0, 256], origin='upper', aspect='equal')
+    
+    # On parcourt chaque match concerné
+    for match_id, target_seg_ids in segments_locations.items():
+        json_path_int = compressed_dir_path / f"{match_id}_compressed.json"
+        
+        if not json_path_int.exists():
+            continue
+
+        with open(json_path_int, 'r') as f:
+            match_data = json.load(f)
+
+        for player in match_data['players']:
+            p_id = player['player_id']
+            for idx, seg in enumerate(player['segments']):
+                current_seg_id = f"P{p_id}_{idx}"
+                
+                if current_seg_id in target_seg_ids:
+                    p1 = seg['start']
+                    p2 = seg['end']
+                    
+                    # --- AFFICHAGE CLAIR ET SUPERPOSÉ ---
+                    # 1. La ligne rouge (zorder=2 pour être visible mais sous la flèche)
+                    plt.plot([p1['x'], p2['x']], [p1['y'], p2['y']], 
+                             color='#FF0000', linewidth=2.5, alpha=0.6, 
+                             zorder=2)
+                    
+                    # 2. La flèche jaune (zorder=10 pour être SÛREMENT au-dessus)
+                    arrow = FancyArrowPatch(
+                        (p1['x'], p1['y']), (p2['x'], p2['y']),
+                        arrowstyle='-|>',  
+                        mutation_scale=20, 
+                        color='#FFFF00',   
+                        linewidth=0,       
+                        alpha=1.0,         
+                        zorder=10          # <-- PRIORITÉ MAXIMALE
+                    )
+                    plt.gca().add_patch(arrow)
+                    
+                    count_segments += 1
+
+    # 5. Finalisation du graphique
+    plt.xlim(0, 256)
+    plt.ylim(0, 256)
+    plt.title(f"Visualisation Cluster #{cluster_id} ({count_segments} segments)", fontsize=16, fontweight='bold')
+    plt.axis('off') # On cache les axes
+    
+    print(f"✅ Fenêtre ouverte avec {count_segments} segments.")
+    plt.show()

@@ -10,6 +10,7 @@ Usage:
     python run.py zoom-proof [--match_id 3841665963] [--w_error 12]
     python run.py overlay --w_error 12 --match_id 3841893562 [--interactive]
     python run.py cluster --w_error 12 --max_files 10
+    python run.py visu_cluster 5 --w_error 12
 """
 
 import argparse
@@ -21,13 +22,14 @@ from dota_analytics.compression import MDLCompressor, process_full_match
 from dota_analytics.structures import Trajectory, TrajectoryPoint, JSONExporter
 from dota_analytics.plotting import (
     InteractiveOverlay, generate_static_overlay,
-    get_available_w_errors, get_available_games
+    get_available_w_errors, get_available_games,
+    plot_cluster_on_map  # Import de la fonction modifiée
 )
 from dota_analytics.clustering import run_clustering
 
 import pandas as pd
 import matplotlib
-matplotlib.use('Agg')  # Backend non-interactif par défaut
+matplotlib.use('Agg')  # Backend non-interactif par défaut (pour les calculs)
 import matplotlib.pyplot as plt
 import numpy as np
 from multiprocessing import Pool, cpu_count
@@ -245,15 +247,6 @@ def generate_comparison_image(csv_path, json_path, w_error, output_dir):
         ax1.grid(True, alpha=0.2, linestyle='--')
         ax1.set_aspect('equal')
         ax1.set_facecolor('#f8f8f8')
-        ax1.legend(loc='upper right', fontsize=8)
-        
-        ax2.set_title(f'Compressé: {total_segments} segments ({reduction:.1f}% compression)', 
-                      fontsize=14, fontweight='bold', color='darkred')
-        ax2.set_xlabel('X (coordonnées carte)', fontsize=12)
-        ax2.set_ylabel('Y (coordonnées carte)', fontsize=12)
-        ax2.grid(True, alpha=0.2, linestyle='--')
-        ax2.set_aspect('equal')
-        ax2.set_facecolor('#f8f8f8')
         
         # Sauvegarder
         output_path = output_dir / f'{match_id}_w{w_error}_comparison.png'
@@ -642,9 +635,7 @@ def cmd_cluster(args):
     print("=" * 70)
     
     # 1. On construit les deux noms de dossiers possibles
-    # Cas A : w_error_12 (entier)
     name_int = f"w_error_{int(args.w_error)}"
-    # Cas B : w_error_12.0 (float - c'est ton cas actuel)
     name_float = f"w_error_{float(args.w_error)}"
     
     path_int = COMPRESSED_DIR / name_int
@@ -672,6 +663,56 @@ def cmd_cluster(args):
 
 
 # =============================================================================
+# COMMANDE: VISU CLUSTER (NOUVEAU - MODE FENÊTRE)
+# =============================================================================
+
+def cmd_visu_cluster(args):
+    """Visualise un cluster spécifique (mode fenêtre)."""
+    cluster_id = args.cluster_id
+    w_error = args.w_error
+    
+    print("=" * 70)
+    print(f"VISUALISATION CLUSTER #{cluster_id} (MODE FENÊTRE)")
+    print("=" * 70)
+
+    # 1. Passer en mode graphique pour l'affichage fenêtre
+    matplotlib.use('TkAgg')
+
+    # 2. Trouver le dossier des données compressées
+    name_int = f"w_error_{int(w_error)}"
+    name_float = f"w_error_{float(w_error)}"
+    
+    path_int = COMPRESSED_DIR / name_int
+    path_float = COMPRESSED_DIR / name_float
+    
+    if path_float.exists():
+        compressed_dir = path_float
+        folder_name = name_float
+    elif path_int.exists():
+        compressed_dir = path_int
+        folder_name = name_int
+    else:
+        print(f"❌ Dossier de données compressées introuvable pour w_error={w_error}")
+        return
+
+    # 3. Trouver le fichier de résultats des clusters
+    clusters_file = CLUSTERS_DIR / f"clusters_result_{folder_name}.json"
+    
+    if not clusters_file.exists():
+        print(f"❌ Fichier de clusters introuvable : {clusters_file}")
+        print("💡 Avez-vous lancé 'python run.py cluster ...' ?")
+        return
+
+    # 4. Lancer le tracé (plus de output_path)
+    plot_cluster_on_map(
+        canvas_path=CANVAS_PATH,
+        clusters_file=clusters_file,
+        compressed_dir_path=compressed_dir,
+        cluster_id=cluster_id
+    )
+
+
+# =============================================================================
 # MAIN
 # =============================================================================
 
@@ -692,7 +733,8 @@ Exemples:
   python run.py zoom-proof --w_error 12
   python run.py overlay --w_error 12 --match_id 3841893562
   
-  python run.py cluster --w_error 12 --max_files 5
+  python run.py cluster --w_error 12 --max_files 10
+  python run.py visu_cluster 5 --w_error 12
         """
     )
     
@@ -751,6 +793,12 @@ Exemples:
                                help='Paramètre de compression')
     parser_cluster.add_argument('--max_files', type=int, default=None,
                                help='Nombre maximum de fichiers à traiter')
+
+    # VISU-CLUSTER
+    parser_visu_clust = subparsers.add_parser('visu_cluster', help='Visualiser un cluster sur la carte')
+    parser_visu_clust.add_argument('cluster_id', type=int, help='Numéro du cluster (K)')
+    parser_visu_clust.add_argument('--w_error', type=float, default=12.0, 
+                                  help='W_error utilisé pour le clustering (défaut: 12)')
     
     args = parser.parse_args()
     
@@ -768,6 +816,7 @@ Exemples:
         'overlay': cmd_overlay,
         'overlay-select': cmd_overlay_select,
         'cluster': cmd_cluster,
+        'visu_cluster': cmd_visu_cluster,
     }
     
     commands[args.command](args)
