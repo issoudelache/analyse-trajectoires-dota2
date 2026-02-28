@@ -1,7 +1,6 @@
 __pycache__/
 *.pyc
 .venv/
-venv/
 data-dota/
 tests/tuning_results/
 exported_data/
@@ -9,3 +8,4 @@ exported_data_mvc/
 output/
 *.tar.gz
 *.log
+outpout
