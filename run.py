@@ -794,6 +794,42 @@ def cmd_visu_cluster(args):
 
 
 # =============================================================================
+# COMMANDE: RECODE
+# =============================================================================
+
+def cmd_recode(args):
+    """Transforme les clusters en séquences SPMF pour PrefixSpan."""
+    from dota_analytics.recoding import reconstruct_sequences, save_sequences_to_spmf
+    
+    print("=" * 70)
+    print("RECODAGE DES CLUSTERS EN SÉQUENCES SPMF")
+    print("=" * 70)
+
+    w_error_str = str(int(args.w_error)) if args.w_error.is_integer() else str(args.w_error)
+    cluster_file = CLUSTERS_DIR / f"clusters_result_w_error_{w_error_str}.json"
+
+    if not cluster_file.exists():
+        print(f"❌ Fichier de clusters introuvable : {cluster_file}")
+        return
+
+    with open(cluster_file, "r") as f:
+        match_clusters = json.load(f)
+
+    # Aplatir le dictionnaire
+    global_cluster_map = {}
+    for match_id, segments in match_clusters.items():
+        for seg_id, cluster_label in segments.items():
+            global_cluster_map[seg_id] = str(cluster_label)
+
+    # Reconstruire et sauvegarder
+    sequences = reconstruct_sequences(global_cluster_map)
+    spmf_path = OUTPUT_DIR / "sequences.spmf"
+    save_sequences_to_spmf(sequences, spmf_path)
+
+    print(f"✅ {len(sequences)} trajectoires recodées ! Fichier : {spmf_path}")
+
+
+# =============================================================================
 # COMMANDE: VISU NETWORK
 # =============================================================================
 
@@ -943,6 +979,10 @@ Exemples:
         help="Nombre maximum de fichiers à traiter",
     )
 
+    # RECODE
+    parser_recode = subparsers.add_parser("recode", help="Recoder les clusters en format SPMF")
+    parser_recode.add_argument("--w_error", type=float, required=True, help="Paramètre de compression utilisé")
+
     # VISU-NETWORK
     parser_network = subparsers.add_parser("visu_network", help="Visualiser les routes fréquentes en graphe")
     parser_network.add_argument("--min_support", type=int, default=10, help="Support minimal des motifs")
@@ -976,6 +1016,7 @@ Exemples:
         "overlay-select": cmd_overlay_select,
         "cluster": cmd_cluster,
         "visu_cluster": cmd_visu_cluster,
+        "recode": cmd_recode,
         "visu_network": cmd_visu_network,
     }
 
