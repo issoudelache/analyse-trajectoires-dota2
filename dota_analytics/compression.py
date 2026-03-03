@@ -184,6 +184,81 @@ def compress_player_trajectory(
     return compressor.compress_player_trajectory(trajectory)
 
 
+class DouglasPeuckerCompressor:
+    """Algorithme de simplification de Ramer-Douglas-Peucker.
+
+    Méthode classique de référence : réduit récursivement le nombre de points
+    en supprimant ceux qui sont sous le seuil epsilon de distance perpendiculaire.
+    Renvoie une liste de Segment identique à MDLCompressor pour comparaison directe.
+    """
+
+    def __init__(self, epsilon: float = 5.0):
+        """Initialise le compresseur Douglas-Peucker.
+
+        Args:
+            epsilon: Distance perpendiculaire maximale tolérée.
+                     GRAND → compression forte (moins de segments)
+                     PETIT → fidélité haute (plus de segments)
+        """
+        self.epsilon = epsilon
+        self.geometry = GeometryUtils()
+
+    def _rdp_indices(self, points: list, start: int, end: int, result: list) -> None:
+        """Récursion RDP : trouve les indices des points à conserver.
+
+        Args:
+            points: Liste de TrajectoryPoint
+            start: Indice de début
+            end: Indice de fin
+            result: Set des indices à conserver (modifié en place)
+        """
+        if end <= start + 1:
+            return
+
+        p_start = np.array([points[start].x, points[start].y])
+        p_end = np.array([points[end].x, points[end].y])
+
+        # Calculer distance perpendiculaire de tous les points intermédiaires
+        intermediate = np.array(
+            [[points[i].x, points[i].y] for i in range(start + 1, end)]
+        )
+        distances = self.geometry.perpendicular_distances_vectorized(
+            intermediate, p_start, p_end
+        )
+
+        max_dist_idx = int(np.argmax(distances))
+        max_dist = distances[max_dist_idx]
+        split_idx = start + 1 + max_dist_idx
+
+        if max_dist >= self.epsilon:
+            result.append(split_idx)
+            self._rdp_indices(points, start, split_idx, result)
+            self._rdp_indices(points, split_idx, end, result)
+
+    def compress_player_trajectory(self, trajectory: Trajectory) -> List[Segment]:
+        """Compresse une trajectoire avec Douglas-Peucker.
+
+        Args:
+            trajectory: Trajectoire du joueur à compresser
+
+        Returns:
+            Liste de Segment (même interface que MDLCompressor)
+        """
+        if len(trajectory) < 2:
+            return []
+
+        points = trajectory.points
+        kept_indices = [0, len(points) - 1]
+        self._rdp_indices(points, 0, len(points) - 1, kept_indices)
+        kept_indices = sorted(set(kept_indices))
+
+        segments = [
+            Segment(start=points[kept_indices[i]], end=points[kept_indices[i + 1]])
+            for i in range(len(kept_indices) - 1)
+        ]
+        return segments
+
+
 def process_full_match(
     df: pd.DataFrame, match_id: str, w_error: float = 2.0, verbose: bool = False
 ) -> Dict[int, List[Segment]]:
