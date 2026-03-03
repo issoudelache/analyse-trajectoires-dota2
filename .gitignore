@@ -1,6 +1,7 @@
 __pycache__/
 *.pyc
 .venv/
+venv/
 data-dota/
 tests/tuning_results/
 exported_data/
