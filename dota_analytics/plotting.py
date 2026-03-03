@@ -550,30 +550,42 @@ def plot_markov_network(patterns_dict: dict, min_len: int = 2, output_path: str 
     edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
     max_weight = max(edge_weights) if edge_weights else 1
     edge_widths = [1 + (w / max_weight) * 5 for w in edge_weights]
+    
+    # Définition des couleurs des noeuds selon leur centralité (poids total)
+    node_colors = [G.degree(n, weight='weight') for n in G.nodes()]
 
     # 3. Rendu
-    plt.figure(figsize=(14, 10))
+    plt.figure(figsize=(16, 12)) # Agrandissement de la figure
     
-    # Layout circulaire ou "ressort" (spring) pour repousser les noeuds
-    pos = nx.spring_layout(G, k=1.5, seed=42)
+    # Ajustement du layout pour mieux espacer les noeuds
+    pos = nx.spring_layout(G, k=2.5, iterations=50, seed=42)
 
-    # Dessin des noeuds
-    nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color='skyblue', edgecolors='black', alpha=0.9)
+    # Dessin des noeuds avec palette de couleur (ex: YlOrRd)
+    nx.draw_networkx_nodes(
+        G, pos, 
+        node_size=node_sizes, 
+        node_color=node_colors, 
+        cmap=plt.cm.YlOrRd, 
+        edgecolors='black', 
+        linewidths=1.5,
+        alpha=0.95
+    )
     
-    # Dessin des étiquettes (IDs des clusters)
-    nx.draw_networkx_labels(G, pos, font_size=12, font_weight="bold")
+    # Dessin des étiquettes (IDs des clusters) avec une police plus adaptée
+    nx.draw_networkx_labels(G, pos, font_size=10, font_weight="bold", font_color="black")
     
-    # Dessin des arêtes (flèches de transition)
+    # Dessin des arêtes (flèches de transition) avec transparence
     nx.draw_networkx_edges(
         G, pos, 
         width=edge_widths, 
         edge_color=edge_weights, 
         edge_cmap=plt.cm.Blues, 
-        arrowsize=20, 
-        connectionstyle='arc3,rad=0.1' # Courbure pour éviter le chevauchement si A->B et B->A
+        arrowsize=25, 
+        alpha=0.7,   # Transparence ajoutée pour adoucir les croisements
+        connectionstyle='arc3,rad=0.15' # Légère hausse de la courbure
     )
 
-    plt.title("Graphe des Transitions Macroscopiques (Motifs Dota 2)", fontsize=16, fontweight="bold")
+    plt.title("Graphe des Transitions Macroscopiques (Motifs Dota 2)", fontsize=18, fontweight="bold")
     plt.axis("off")
 
     if output_path:

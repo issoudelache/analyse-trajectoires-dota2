@@ -3,38 +3,39 @@ from collections import defaultdict
 import re
 
 
-def reconstruct_sequences(cluster_map: Dict[str, int]) -> List[List[str]]:
+def reconstruct_sequences(match_clusters: Dict[str, Dict[str, int]]) -> List[List[str]]:
     """
-    Groupe les identifiants de clusters par joueur et les trie chronologiquement pour former des trajectoires.
+    Reconstruit une séquence de clusters par joueur par match.
 
     Args:
-        cluster_map: Un dictionnaire associant les ID de segments (ex: 'P0_1') aux étiquettes de cluster (int).
+        match_clusters: Dictionnaire {match_id: {seg_id: cluster_label}}
+                         où seg_id est formaté comme 'P{player_id}_{index}'.
 
     Returns:
-        Une liste de séquences, où chaque séquence correspond aux clusters visités ordonnés
-        pour un joueur spécifique.
+        Une liste de séquences (une par joueur par match), triées chronologiquement.
         Exemple: [['5', '3', '5'], ['1', '1', '2']]
     """
-    # Regroupe les tuples (index_segment, label_cluster) par player_id
-    player_sequences = defaultdict(list)
-
-    for segment_id, cluster_label in cluster_map.items():
-        # Les ID de segments sont formatés comme P{player_id}_{sequence_index}
-        match = re.match(r"P(\d+)_(\d+)", segment_id)
-        if match:
-            player_id, sequence_index = map(int, match.groups())
-            # Stocker en chaîne immédiatement pour faciliter la jointure plus tard
-            player_sequences[player_id].append((sequence_index, str(cluster_label)))
-
-    # Trier les joueurs par ID pour assurer un ordre de sortie déterministe
-    sorted_player_ids = sorted(player_sequences.keys())
-
-    # Pour chaque joueur, trier ses clusters visités par index temporel
     ordered_sequences = []
-    for pid in sorted_player_ids:
-        # Trier par index (premier élément du tuple) et extraire le label du cluster
-        sequence = [label for _, label in sorted(player_sequences[pid])]
-        ordered_sequences.append(sequence)
+
+    # Itérer sur chaque match séparément pour ne pas mélanger les matchs
+    for match_id in sorted(match_clusters.keys()):
+        segments = match_clusters[match_id]
+
+        # Regroupe les tuples (index_segment, label_cluster) par player_id
+        player_sequences = defaultdict(list)
+
+        for segment_id, cluster_label in segments.items():
+            # Les ID de segments sont formatés comme P{player_id}_{sequence_index}
+            m = re.match(r"P(\d+)_(\d+)", segment_id)
+            if m:
+                player_id, sequence_index = map(int, m.groups())
+                player_sequences[player_id].append((sequence_index, str(cluster_label)))
+
+        # Pour chaque joueur du match, trier ses segments par index temporel
+        for pid in sorted(player_sequences.keys()):
+            sequence = [label for _, label in sorted(player_sequences[pid])]
+            if sequence:  # Ne pas ajouter les séquences vides
+                ordered_sequences.append(sequence)
 
     return ordered_sequences
 

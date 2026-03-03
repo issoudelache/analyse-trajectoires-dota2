@@ -45,7 +45,8 @@ import numpy as np
 # =============================================================================
 
 BASE_DIR = Path(__file__).parent
-DATA_DIR = BASE_DIR / "data-dota"
+# Le dossier de données est imbriqué : data-dota/data-dota/
+DATA_DIR = BASE_DIR / "data-dota" / "data-dota"
 OUTPUT_DIR = BASE_DIR / "output"
 COMPRESSED_DIR = OUTPUT_DIR / "compressed"
 VISUALIZATIONS_DIR = OUTPUT_DIR / "visualizations"
@@ -709,7 +710,7 @@ def cmd_overlay_select(args):
 def cmd_cluster(args):
     """Lance le clustering."""
     print("=" * 70)
-    print("CLUSTERING (CUSTOM AFFINITY PROPAGATION)")
+    print(f"CLUSTERING ({args.algo.upper()})")
     print("=" * 70)
 
     # 1. On construit les deux noms de dossiers possibles
@@ -739,7 +740,7 @@ def cmd_cluster(args):
         print(f"⚠️  Mode test : Limite de {args.max_files} fichiers.")
 
     # Lancement avec l'option de limitation
-    run_clustering(target_folder, max_files=args.max_files)
+    run_clustering(target_folder, max_files=args.max_files, algo=args.algo)
 
 
 # =============================================================================
@@ -800,33 +801,40 @@ def cmd_visu_cluster(args):
 def cmd_recode(args):
     """Transforme les clusters en séquences SPMF pour PrefixSpan."""
     from dota_analytics.recoding import reconstruct_sequences, save_sequences_to_spmf
-    
+
     print("=" * 70)
-    print("RECODAGE DES CLUSTERS EN SÉQUENCES SPMF")
+    print("RECODAGE DES CLUSTERS EN SEQUENCES SPMF")
     print("=" * 70)
 
-    w_error_str = str(int(args.w_error)) if args.w_error.is_integer() else str(args.w_error)
-    cluster_file = CLUSTERS_DIR / f"clusters_result_w_error_{w_error_str}.json"
+    # Recherche du fichier de clusters avec les deux formats possibles (12 ou 12.0)
+    candidates = [
+        CLUSTERS_DIR / f"clusters_result_w_error_{int(args.w_error)}.json",
+        CLUSTERS_DIR / f"clusters_result_w_error_{float(args.w_error)}.json",
+        CLUSTERS_DIR / f"clusters_result_w_error_{args.w_error}.json",
+    ]
 
-    if not cluster_file.exists():
-        print(f"❌ Fichier de clusters introuvable : {cluster_file}")
+    cluster_file = next((p for p in candidates if p.exists()), None)
+
+    if cluster_file is None:
+        print("Fichier de clusters introuvable. Fichiers disponibles :")
+        for f in CLUSTERS_DIR.glob("*.json"):
+            print(f"  - {f.name}")
         return
+
+    print(f"Fichier trouve : {cluster_file.name}")
 
     with open(cluster_file, "r") as f:
         match_clusters = json.load(f)
 
-    # Aplatir le dictionnaire
-    global_cluster_map = {}
-    for match_id, segments in match_clusters.items():
-        for seg_id, cluster_label in segments.items():
-            global_cluster_map[seg_id] = str(cluster_label)
+    total_segments = sum(len(segs) for segs in match_clusters.values())
+    print(f"{total_segments} segments charges sur {len(match_clusters)} matchs.")
 
-    # Reconstruire et sauvegarder
-    sequences = reconstruct_sequences(global_cluster_map)
+    # On passe directement le dict {match_id: {seg_id: label}} pour une séquence par joueur par match
+    sequences = reconstruct_sequences(match_clusters)
     spmf_path = OUTPUT_DIR / "sequences.spmf"
-    save_sequences_to_spmf(sequences, spmf_path)
+    save_sequences_to_spmf(sequences, str(spmf_path))
 
-    print(f"✅ {len(sequences)} trajectoires recodées ! Fichier : {spmf_path}")
+    print(f"{len(sequences)} trajectoires recodees. Fichier : {spmf_path}")
 
 
 # =============================================================================
@@ -837,32 +845,44 @@ def cmd_visu_network(args):
     """Lance PrefixSpan et visualise le résultat en Graphe NetworkX."""
     from dota_analytics.mining import PrefixSpan
     import matplotlib
-    # Passer en mode interactif si on veut afficher la fenêtre
-    matplotlib.use("TkAgg")
+
+    # Fallback progressif si TkAgg ou Qt5Agg ne sont pas disponibles
+    for backend in ["TkAgg", "Qt5Agg", "Agg"]:
+        try:
+            matplotlib.use(backend)
+            break
+        except Exception:
+            continue
 
     print("=" * 70)
-    print("GÉNÉRATION DU GRAPHE DES TRANSITIONS")
+    print("GENERATION DU GRAPHE DES TRANSITIONS")
     print("=" * 70)
 
-    # Note : Idéalement, remplacez 'dummy_spmf_path.txt' par le chemin réel de votre fichier SPMF
-    # généré par l'étape de 'recoding'.
-    spmf_path = OUTPUT_DIR / "sequences.spmf" 
-    
+    spmf_path = OUTPUT_DIR / "sequences.spmf"
+
     if not spmf_path.exists():
-        print(f"❌ Fichier SPMF introuvable : {spmf_path}")
-        print("💡 Vous devez d'abord générer des séquences pour PrefixSpan.")
+        print(f"Fichier SPMF introuvable : {spmf_path}")
+        print("Lancez d'abord : python run.py recode --w_error 12")
         return
 
-    # Lancement du minage
-    miner = PrefixSpan(min_support=args.min_support)
-    db = miner.load_spmf(spmf_path)
-    print(f"✅ Base chargée ({len(db)} séquences). Min Support = {args.min_support}")
-    
-    results = miner.mine(db)
-    print(f"✅ {len(results)} motifs trouvés.")
+    miner = PrefixSpan(min_support=args.min_support, max_length=args.max_length)
+    db = miner.load_spmf(str(spmf_path))
+    print(f"Base chargee ({len(db)} sequences). Min Support = {args.min_support}, Max Length = {args.max_length}")
 
-    # Affichage du graphe
-    plot_markov_network(results, min_len=2)
+    if len(db) == 0:
+        print("Base de sequences vide. Verifiez le fichier sequences.spmf")
+        return
+
+    results = miner.mine(db)
+    print(f"{len(results)} motifs trouves.")
+
+    if len(results) == 0:
+        print(f"Aucun motif avec min_support={args.min_support}. Essayez une valeur plus basse.")
+        return
+
+    # Sauvegarde du graphe dans output/ ET affichage si backend graphique dispo
+    output_graph_path = str(OUTPUT_DIR / "markov_network.png")
+    plot_markov_network(results, min_len=2, output_path=output_graph_path)
 
 # =============================================================================
 # MAIN
@@ -978,6 +998,13 @@ Exemples:
         default=None,
         help="Nombre maximum de fichiers à traiter",
     )
+    parser_cluster.add_argument(
+        "--algo",
+        type=str,
+        choices=["affinity", "kmeans"],
+        default="affinity",
+        help="Algorithme a utiliser ('affinity' ou 'kmeans')",
+    )
 
     # RECODE
     parser_recode = subparsers.add_parser("recode", help="Recoder les clusters en format SPMF")
@@ -986,6 +1013,7 @@ Exemples:
     # VISU-NETWORK
     parser_network = subparsers.add_parser("visu_network", help="Visualiser les routes fréquentes en graphe")
     parser_network.add_argument("--min_support", type=int, default=10, help="Support minimal des motifs")
+    parser_network.add_argument("--max_length", type=int, default=8, help="Longueur maximale des motifs (défaut: 8)")
 
     # VISU-CLUSTER
     parser_visu_clust = subparsers.add_parser(

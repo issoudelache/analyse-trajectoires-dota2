@@ -13,14 +13,16 @@ class PrefixSpan:
     Algorithme PrefixSpan de fouille de motifs séquentiels (Pattern Growth).
     """
 
-    def __init__(self, min_support: int = 2):
+    def __init__(self, min_support: int = 2, max_length: int = 10):
         """
         Initialise le modèle avec un seuil de support minimum.
 
         Args:
             min_support: Nombre minimum d'occurrences pour qu'un motif soit conservé.
+            max_length:  Longueur maximale des motifs extraits (évite la récursion infinie).
         """
         self.min_support = min_support
+        self.max_length = max_length
         self.results: Dict[Tuple[int, ...], int] = {}
 
     def load_spmf(self, filepath: str) -> List[np.ndarray]:
@@ -143,6 +145,10 @@ class PrefixSpan:
         # S'il y a moins de séquences projetées que le seuil min_support,
         # un enfant ne pourra jamais exister. On stoppe immédiatement la branche.
         if len(database) < self.min_support:
+            return
+
+        # Limite de profondeur pour éviter la récursion infinie sur les longues séquences
+        if len(prefix) >= self.max_length:
             return
 
         # 1. Trouver les extensions possibles et fréquentes pour ce préfixe

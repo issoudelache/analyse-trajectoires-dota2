@@ -1,15 +1,13 @@
 import json
 import numpy as np
-import os
 from pathlib import Path
 
 # Imports locaux
 from .custom_ap import CustomAffinityPropagation
 from .structures import Segment, TrajectoryPoint
-from .geometry import GeometryUtils
 
 
-def load_data(folder_path, limit=3000, max_files=None):
+def load_data(folder_path, limit=None, max_files=None):
     """Charge les segments. max_files limite le nombre de fichiers JSON lus."""
     folder = Path(folder_path)
 
@@ -62,14 +60,16 @@ def load_data(folder_path, limit=3000, max_files=None):
                         continue
 
             # Limite de segments pour eviter l'explosion memoire
-            if len(all_segments) > limit:
-                print(f"Limite de segments ({limit}) atteinte. On arrete le chargement.")
+            if limit is not None and len(all_segments) > limit:
+                print(
+                    f"Limite de segments ({limit}) atteinte. On arrete le chargement."
+                )
                 return all_segments[:limit], metadata[:limit]
 
     return all_segments, metadata
 
 
-def run_clustering(target_folder, max_files=None):
+def run_clustering(target_folder, max_files=None, algo="affinity"):
     # On passe le parametre max_files a load_data
     segments, meta = load_data(target_folder, max_files=max_files)
     n = len(segments)
@@ -81,91 +81,131 @@ def run_clustering(target_folder, max_files=None):
     print(f"Analyse de {n} segments...")
 
     target_path = Path(target_folder)
-    
-    # 1. Gestion du Cache pour la Matrice de Distance
-    # On la place au meme niveau que output/clusters par exemple ou via config
-    cache_dir = target_path.parent.parent / "cache"
-    cache_dir.mkdir(parents=True, exist_ok=True)
-    cache_file = cache_dir / f"sim_matrix_{target_path.name}_n{n}.npy"
+    output_dir = target_path.parent.parent / "clusters"
+    output_dir.mkdir(parents=True, exist_ok=True)
 
-    if cache_file.exists():
-        print(f"Chargement de la matrice depuis le cache : {cache_file}")
-        similarity_matrix = np.load(cache_file)
+    # ========================================================
+    # BRANCHE K-MEANS : Ne calcule JAMAIS la matrice de similarité
+    # Travaille directement sur les features des segments — compatible 169k+
+    # ========================================================
+    if algo == "kmeans":
+        from sklearn.cluster import MiniBatchKMeans
+        from sklearn.preprocessing import StandardScaler
+
+        print("Extraction des features pour K-Means...")
+        features = []
+        for s in segments:
+            mid_x = (s.start.x + s.end.x) / 2.0
+            mid_y = (s.start.y + s.end.y) / 2.0
+            dx = s.end.x - s.start.x
+            dy = s.end.y - s.start.y
+            length = np.sqrt(dx**2 + dy**2)
+            features.append([mid_x, mid_y, dx, dy, length])
+
+        X = np.array(features, dtype=np.float32)
+
+        # Normalisation pour équilibrer les features (coordonnées vs dx/dy)
+        print("Normalisation des features...")
+        scaler = StandardScaler()
+        X_scaled = scaler.fit_transform(X)
+
+        # MiniBatchKMeans : traitement par lots, compatible avec n très grand
+        n_clusters = 50
+        print(f"Clustering en {n_clusters} clusters (MiniBatchKMeans)...")
+        kmeans = MiniBatchKMeans(
+            n_clusters=n_clusters,
+            random_state=42,
+            batch_size=4096,
+            n_init=10,
+            verbose=1,
+        )
+        labels = kmeans.fit_predict(X_scaled)
+        n_clusters_found = n_clusters
+        print(f"\nTERMINE ! {n_clusters_found} clusters trouves.")
+
+    # ========================================================
+    # BRANCHE AFFINITY PROPAGATION : Calcul de la matrice N×N
+    # Requiert --max_files pour ne pas exploser la RAM
+    # ========================================================
+    elif algo == "affinity":
+        MAX_SEGMENTS_AFFINITY = 5000
+        if n > MAX_SEGMENTS_AFFINITY:
+            print(f"⚠️  ERREUR : Affinity Propagation est limite a {MAX_SEGMENTS_AFFINITY} segments.")
+            print(f"   {n} segments detectes. Reduisez avec --max_files.")
+            print(f"   Alternative sans limite : --algo kmeans")
+            return
+
+        cache_dir = target_path.parent.parent / "cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file = cache_dir / f"sim_matrix_{target_path.name}_n{n}.npy"
+
+        if cache_file.exists():
+            print(f"Chargement de la matrice depuis le cache : {cache_file}")
+            similarity_matrix = np.load(cache_file)
+        else:
+            print("Pre-calcul vectoriel des proprietes...")
+            starts_flt = np.array(
+                [(s.start.x, s.start.y) for s in segments], dtype=np.float32
+            )
+            ends_flt = np.array(
+                [(s.end.x, s.end.y) for s in segments], dtype=np.float32
+            )
+            vectors = ends_flt - starts_flt
+            lengths = np.linalg.norm(vectors, axis=1)
+            lengths = np.clip(lengths, 1e-9, None)
+            directions = vectors / lengths[:, np.newaxis]
+
+            print("Calcul matriciel des similarites en cours (Ultra-Optimise)...")
+            cos_theta = np.clip(np.dot(directions, directions.T), -1.0, 1.0)
+            d_angle = (1.0 - cos_theta) * (lengths[:, np.newaxis] + lengths[np.newaxis, :])
+
+            vx = directions[:, 0:1]
+            vy = directions[:, 1:2]
+            vec_sx = starts_flt[np.newaxis, :, 0] - starts_flt[:, np.newaxis, 0]
+            vec_sy = starts_flt[np.newaxis, :, 1] - starts_flt[:, np.newaxis, 1]
+            vec_ex = ends_flt[np.newaxis, :, 0] - starts_flt[:, np.newaxis, 0]
+            vec_ey = ends_flt[np.newaxis, :, 1] - starts_flt[:, np.newaxis, 1]
+
+            cross_s = np.abs(vx * vec_sy - vy * vec_sx)
+            cross_e = np.abs(vx * vec_ey - vy * vec_ex)
+            sum_cross = cross_s + cross_e
+            d_perp = np.zeros_like(sum_cross)
+            mask = sum_cross > 0
+            d_perp[mask] = (cross_s[mask] ** 2 + cross_e[mask] ** 2) / sum_cross[mask]
+
+            proj_s = vec_sx * vx + vec_sy * vy
+            proj_e = vec_ex * vx + vec_ey * vy
+            base_l = lengths[:, np.newaxis]
+            d_par = (
+                np.minimum(np.abs(proj_s), np.abs(proj_s - base_l))
+                + np.minimum(np.abs(proj_e), np.abs(proj_e - base_l))
+            )
+
+            D_asym = d_perp + d_angle + d_par
+            len_mask = lengths[:, np.newaxis] > lengths[np.newaxis, :]
+            similarity_matrix = -np.where(len_mask, D_asym, D_asym.T)
+
+            np.save(cache_file, similarity_matrix)
+            print(f"Matrice sauvegardee dans le cache : {cache_file}")
+
+        # Remplissage diagonale (mediane)
+        med = np.median(similarity_matrix)
+        np.fill_diagonal(similarity_matrix, med)
+
+        print("Lancement Affinity Propagation (Custom)...")
+        af = CustomAffinityPropagation(damping=0.9, max_iter=400, verbose=True)
+        af.fit(similarity_matrix)
+        labels = af.labels_
+        n_clusters_found = (
+            len(af.cluster_centers_indices_)
+            if af.cluster_centers_indices_ is not None
+            else 0
+        )
+        print(f"\nTERMINE ! {n_clusters_found} clusters trouves.")
+
     else:
-        # 2. Pre-calcul vectoriel des proprietes
-        print("Pre-calcul des vecteurs et longueurs...")
-        starts = np.array([(s.start.x, s.start.y) for s in segments], dtype=np.float64)
-        ends = np.array([(s.end.x, s.end.y) for s in segments], dtype=np.float64)
-        vectors = ends - starts
-        lengths = np.linalg.norm(vectors, axis=1)
-
-        geo = GeometryUtils()
-        similarity_matrix = np.zeros((n, n), dtype=np.float32)
-
-        print("Calcul des distances en cours...")
-        total_calculations = (n * (n - 1)) // 2
-        count = 0
-        milestone = max(1, total_calculations // 10)
-
-        # Calcul matriciel
-        for i in range(n):
-            for j in range(i + 1, n):
-                # Distance Angulaire
-                d_angle = geo.angular_distance(vectors[i], vectors[j]) * (lengths[i] + lengths[j])
-                
-                # Distance Parallele
-                d_par = geo.parallel_distance(starts[i], ends[i], starts[j], ends[j])
-                
-                # Distance Perpendiculaire (Projete le plus court sur le plus long)
-                if lengths[i] > lengths[j]:
-                    base_s, base_e = starts[i], ends[i]
-                    other_s, other_e = starts[j], ends[j]
-                else:
-                    base_s, base_e = starts[j], ends[j]
-                    other_s, other_e = starts[i], ends[i]
-                    
-                d_perp_1 = geo.perpendicular_distance(other_s, base_s, base_e)
-                d_perp_2 = geo.perpendicular_distance(other_e, base_s, base_e)
-                
-                if d_perp_1 + d_perp_2 == 0:
-                    d_perp = 0.0
-                else:
-                    d_perp = (d_perp_1**2 + d_perp_2**2) / (d_perp_1 + d_perp_2)
-                    
-                # Distance totale
-                dist = d_perp + d_angle + d_par
-
-                sim = -dist
-                similarity_matrix[i, j] = sim
-                similarity_matrix[j, i] = sim
-
-                count += 1
-                if count % milestone == 0:
-                    print(f"   Progression : {int(count / total_calculations * 100)}%")
-
-        # Sauvegarde de la matrice calculee dans le cache
-        np.save(cache_file, similarity_matrix)
-        print(f"Matrice sauvegardee ! ({cache_file})")
-
-    # Remplissage diagonale (mediane)
-    med = np.median(similarity_matrix)
-    np.fill_diagonal(similarity_matrix, med)
-
-    # 3. Clustering (Custom AP)
-    print("Lancement Affinity Propagation (Custom)...")
-
-    # Instanciation de l'algo
-    af = CustomAffinityPropagation(damping=0.9, max_iter=400, verbose=True)
-    af.fit(similarity_matrix)
-
-    labels = af.labels_
-    n_clusters = (
-        len(af.cluster_centers_indices_)
-        if af.cluster_centers_indices_ is not None
-        else 0
-    )
-
-    print(f"\nTERMINE ! {n_clusters} clusters trouves.")
+        print(f"Algorithme inconnu : '{algo}'. Choisir 'affinity' ou 'kmeans'.")
+        return
 
     # 4. Sauvegarde
     results = {}
