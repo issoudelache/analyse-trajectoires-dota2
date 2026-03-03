@@ -2,6 +2,7 @@ from typing import Dict, List
 from collections import defaultdict
 import re
 
+
 def reconstruct_sequences(cluster_map: Dict[str, int]) -> List[List[str]]:
     """
     Groupe les identifiants de clusters par joueur et les trie chronologiquement pour former des trajectoires.
@@ -37,11 +38,12 @@ def reconstruct_sequences(cluster_map: Dict[str, int]) -> List[List[str]]:
 
     return ordered_sequences
 
+
 def save_sequences_to_spmf(sequences: List[List[str]], output_path: str) -> None:
     """
     Écrit les séquences dans un fichier utilisant le format d'entrée SPMF.
-    
-    Le format SPMF nécessite que les éléments soient séparés par -1, et la séquence 
+
+    Le format SPMF nécessite que les éléments soient séparés par -1, et la séquence
     terminée par -2.
     Exemple de ligne : 5 -1 3 -1 5 -1 -2
 
@@ -49,7 +51,7 @@ def save_sequences_to_spmf(sequences: List[List[str]], output_path: str) -> None
         sequences: Liste de trajectoires (listes de chaînes d'ID de cluster).
         output_path: Chemin du fichier de destination.
     """
-    with open(output_path, 'w', encoding='utf-8') as f:
+    with open(output_path, "w", encoding="utf-8") as f:
         for seq in sequences:
             # Joint les éléments avec ' -1 ' et ajoute les marqueurs de fin de séquence
             line = " -1 ".join(seq) + " -1 -2\n"
