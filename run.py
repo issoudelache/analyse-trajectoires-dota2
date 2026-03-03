@@ -28,7 +28,8 @@ from dota_analytics.plotting import (
     generate_static_overlay,
     get_available_games,
     get_available_w_errors,
-    plot_cluster_on_map,  # Import de la fonction modifiée
+    plot_cluster_on_map,
+    plot_markov_network,
 )
 from dota_analytics.structures import JSONExporter, Trajectory, TrajectoryPoint
 
@@ -793,6 +794,41 @@ def cmd_visu_cluster(args):
 
 
 # =============================================================================
+# COMMANDE: VISU NETWORK
+# =============================================================================
+
+def cmd_visu_network(args):
+    """Lance PrefixSpan et visualise le résultat en Graphe NetworkX."""
+    from dota_analytics.mining import PrefixSpan
+    import matplotlib
+    # Passer en mode interactif si on veut afficher la fenêtre
+    matplotlib.use("TkAgg")
+
+    print("=" * 70)
+    print("GÉNÉRATION DU GRAPHE DES TRANSITIONS")
+    print("=" * 70)
+
+    # Note : Idéalement, remplacez 'dummy_spmf_path.txt' par le chemin réel de votre fichier SPMF
+    # généré par l'étape de 'recoding'.
+    spmf_path = OUTPUT_DIR / "sequences.spmf" 
+    
+    if not spmf_path.exists():
+        print(f"❌ Fichier SPMF introuvable : {spmf_path}")
+        print("💡 Vous devez d'abord générer des séquences pour PrefixSpan.")
+        return
+
+    # Lancement du minage
+    miner = PrefixSpan(min_support=args.min_support)
+    db = miner.load_spmf(spmf_path)
+    print(f"✅ Base chargée ({len(db)} séquences). Min Support = {args.min_support}")
+    
+    results = miner.mine(db)
+    print(f"✅ {len(results)} motifs trouvés.")
+
+    # Affichage du graphe
+    plot_markov_network(results, min_len=2)
+
+# =============================================================================
 # MAIN
 # =============================================================================
 
@@ -907,6 +943,10 @@ Exemples:
         help="Nombre maximum de fichiers à traiter",
     )
 
+    # VISU-NETWORK
+    parser_network = subparsers.add_parser("visu_network", help="Visualiser les routes fréquentes en graphe")
+    parser_network.add_argument("--min_support", type=int, default=10, help="Support minimal des motifs")
+
     # VISU-CLUSTER
     parser_visu_clust = subparsers.add_parser(
         "visu_cluster", help="Visualiser un cluster sur la carte"
@@ -936,6 +976,7 @@ Exemples:
         "overlay-select": cmd_overlay_select,
         "cluster": cmd_cluster,
         "visu_cluster": cmd_visu_cluster,
+        "visu_network": cmd_visu_network,
     }
 
     commands[args.command](args)

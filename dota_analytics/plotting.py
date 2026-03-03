@@ -9,6 +9,7 @@ import matplotlib.pyplot as plt
 import matplotlib.image as mpimg
 from matplotlib.patches import FancyArrowPatch
 from matplotlib.widgets import Slider
+import networkx as nx
 
 # Couleurs pour les 10 joueurs
 PLAYER_COLORS = [
@@ -508,3 +509,77 @@ def plot_cluster_on_map(canvas_path, clusters_file, compressed_dir_path, cluster
 
     print(f"✅ Fenêtre ouverte avec {count_segments} segments.")
     plt.show()
+
+
+def plot_markov_network(patterns_dict: dict, min_len: int = 2, output_path: str = None):
+    """
+    Génère un graphe de flux (transitions entre clusters) à partir des motifs PrefixSpan.
+    
+    Args:
+        patterns_dict: Dictionnaire {tuple_de_clusters: support}
+        min_len: Taille minimale de la séquence pour être tracée (défaut: 2)
+        output_path: Si renseigné, sauvegarde l'image au lieu de l'afficher
+    """
+    G = nx.DiGraph()
+
+    # 1. Construction du Graphe (Noeuds et Arêtes)
+    for pattern, support in patterns_dict.items():
+        if len(pattern) < min_len:
+            continue
+            
+        # Création des liens pour chaque transition A -> B
+        for i in range(len(pattern) - 1):
+            source = pattern[i]
+            target = pattern[i + 1]
+            
+            # Addition des poids si la transition existe déjà via un autre motif
+            if G.has_edge(source, target):
+                G[source][target]['weight'] += support
+            else:
+                G.add_edge(source, target, weight=support)
+
+    if len(G.nodes) == 0:
+        print("⚠️ Aucun motif multi-étapes à tracer.")
+        return
+
+    # 2. Esthétique : Tailles basées sur la popularité
+    # La taille du nœud dépend de son utilisation globale comme point de passage
+    node_sizes = [min(3000, 300 + 50 * G.in_degree(n, weight='weight') + 50 * G.out_degree(n, weight='weight')) for n in G.nodes()]
+    
+    # L'épaisseur de l'arête dépend du support
+    edge_weights = [G[u][v]['weight'] for u, v in G.edges()]
+    max_weight = max(edge_weights) if edge_weights else 1
+    edge_widths = [1 + (w / max_weight) * 5 for w in edge_weights]
+
+    # 3. Rendu
+    plt.figure(figsize=(14, 10))
+    
+    # Layout circulaire ou "ressort" (spring) pour repousser les noeuds
+    pos = nx.spring_layout(G, k=1.5, seed=42)
+
+    # Dessin des noeuds
+    nx.draw_networkx_nodes(G, pos, node_size=node_sizes, node_color='skyblue', edgecolors='black', alpha=0.9)
+    
+    # Dessin des étiquettes (IDs des clusters)
+    nx.draw_networkx_labels(G, pos, font_size=12, font_weight="bold")
+    
+    # Dessin des arêtes (flèches de transition)
+    nx.draw_networkx_edges(
+        G, pos, 
+        width=edge_widths, 
+        edge_color=edge_weights, 
+        edge_cmap=plt.cm.Blues, 
+        arrowsize=20, 
+        connectionstyle='arc3,rad=0.1' # Courbure pour éviter le chevauchement si A->B et B->A
+    )
+
+    plt.title("Graphe des Transitions Macroscopiques (Motifs Dota 2)", fontsize=16, fontweight="bold")
+    plt.axis("off")
+
+    if output_path:
+        plt.tight_layout()
+        plt.savefig(output_path, dpi=200, bbox_inches='tight')
+        print(f"✅ Graphe sauvegardé : {output_path}")
+        plt.close()
+    else:
+        plt.show()
