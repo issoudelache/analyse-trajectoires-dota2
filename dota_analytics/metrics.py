@@ -154,6 +154,156 @@ def calculate_compression_rate(num_original: int, num_compressed: int) -> float:
     return (1 - num_compressed / num_original) * 100
 
 
+# =============================================================================
+# MÉTRIQUES DE COMPARAISON INTER-ALGORITHMES
+# =============================================================================
+
+
+def _point_to_segment_dist(
+    px: float, py: float,
+    x1: float, y1: float,
+    x2: float, y2: float,
+) -> float:
+    """Distance d'un point (px, py) à un segment fini [(x1,y1)→(x2,y2)].
+
+    Contrairement à la distance perpendiculaire (ligne infinie), projette
+    le point sur le segment et le clamp entre les extrémités si besoin.
+
+    Returns:
+        Distance minimale en unités de carte
+    """
+    dx, dy = x2 - x1, y2 - y1
+    len_sq = dx * dx + dy * dy
+    if len_sq < 1e-10:
+        return float(np.sqrt((px - x1) ** 2 + (py - y1) ** 2))
+    t = max(0.0, min(1.0, ((px - x1) * dx + (py - y1) * dy) / len_sq))
+    proj_x = x1 + t * dx
+    proj_y = y1 + t * dy
+    return float(np.sqrt((px - proj_x) ** 2 + (py - proj_y) ** 2))
+
+
+def rmse_segments_to_points(
+    original_points: List[TrajectoryPoint], segments: List[Segment]
+) -> float:
+    """RMSE entre points originaux et trajectoire compressée (segments finis).
+
+    Pour chaque point original, calcule la distance minimale à l'ensemble des
+    segments (projection sur segment fini, bornée aux extrémités). Retourne
+    la racine de la moyenne des carrés de ces distances.
+
+    Utilisé pour comparer objectivement MDL, Douglas-Peucker et Uniforme
+    à taux de compression égal.
+
+    Args:
+        original_points: Liste de TrajectoryPoint de la trajectoire brute
+        segments: Segments compressés (MDL, DP ou Uniforme)
+
+    Returns:
+        RMSE en unités de distance (0.0 si données vides)
+    """
+    if not segments or not original_points:
+        return 0.0
+
+    sq_errors = []
+    for pt in original_points:
+        min_dist = min(
+            _point_to_segment_dist(
+                pt.x, pt.y,
+                seg.start.x, seg.start.y,
+                seg.end.x, seg.end.y,
+            )
+            for seg in segments
+        )
+        sq_errors.append(min_dist ** 2)
+
+    return float(np.sqrt(np.mean(sq_errors)))
+
+
+def hausdorff_distance(
+    original_points: List[TrajectoryPoint], segments: List[Segment]
+) -> float:
+    """Distance de Hausdorff entre points originaux et trajectoire compressée.
+
+    Calcule la distance maximale de chaque point original au segment le plus
+    proche (finite segment). Représente l'erreur MAXIMALE garantie
+    par la compression — un seul point mal placé suffit à dégrader ce score.
+
+    Args:
+        original_points: Liste de TrajectoryPoint de la trajectoire brute
+        segments: Segments compressés
+
+    Returns:
+        Distance de Hausdorff (0.0 si données vides)
+    """
+    if not segments or not original_points:
+        return 0.0
+
+    max_dist = 0.0
+    for pt in original_points:
+        min_dist = min(
+            _point_to_segment_dist(
+                pt.x, pt.y,
+                seg.start.x, seg.start.y,
+                seg.end.x, seg.end.y,
+            )
+            for seg in segments
+        )
+        if min_dist > max_dist:
+            max_dist = min_dist
+
+    return float(max_dist)
+
+
+def stop_preservation_rate(
+    original_points: List[TrajectoryPoint],
+    segments: List[Segment],
+    speed_threshold: float = 2.0,
+) -> "float | None":
+    """Taux de préservation des points d'arrêt après compression.
+
+    Un point P_i est un arrêt si la distance spatiale P_i → P_{i+1}
+    est inférieure à speed_threshold (joueur quasi-immobile entre deux ticks).
+
+    Mesure le % de ces ticks d'arrêt qui sont encore présents parmi les
+    bornes (start.tick / end.tick) des segments compressés.
+
+    Args:
+        original_points: Points de la trajectoire originale (ordonnés par tick)
+        segments: Segments compressés
+        speed_threshold: Distance spatiale max entre 2 ticks pour qu'un point
+                         soit considéré comme un arrêt (défaut: 2.0 unités)
+
+    Returns:
+        Pourcentage [0–100] d'arrêts préservés, ou None s'il n'y a aucun
+        arrêt dans la fenêtre (à exclure des statistiques agrégées)
+    """
+    if len(original_points) < 2 or not segments:
+        return None
+
+    # Détection des arrêts : P_i est un stop si dist(P_i, P_{i+1}) < seuil
+    stop_ticks: set[int] = set()
+    for i in range(len(original_points) - 1):
+        p_curr = original_points[i]
+        p_next = original_points[i + 1]
+        dist = np.sqrt(
+            (p_next.x - p_curr.x) ** 2 + (p_next.y - p_curr.y) ** 2
+        )
+        if dist < speed_threshold:
+            stop_ticks.add(p_curr.tick)
+
+    if not stop_ticks:
+        return None
+
+    # Ticks conservés = bornes des segments compressés
+    compressed_ticks: set[int] = set()
+    for seg in segments:
+        compressed_ticks.add(seg.start.tick)
+        compressed_ticks.add(seg.end.tick)
+
+    preserved = stop_ticks & compressed_ticks
+    return float(len(preserved) / len(stop_ticks) * 100)
+
+
 def segment_length_statistics(segments: List[Segment]) -> Dict[str, float]:
     """Calcule des statistiques sur les longueurs des segments.
 
