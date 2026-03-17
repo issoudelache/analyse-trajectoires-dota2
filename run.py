@@ -25,6 +25,7 @@ from dota_analytics.clustering import run_clustering
 from dota_analytics.compression import MDLCompressor, process_full_match
 from dota_analytics.plotting import (
     InteractiveOverlay,
+    generate_comparison_image,
     generate_static_overlay,
     get_available_games,
     get_available_w_errors,
@@ -183,123 +184,6 @@ def cmd_compress_batch(args):
 # =============================================================================
 # COMMANDE: VISUALIZE
 # =============================================================================
-
-
-def generate_comparison_image(csv_path, json_path, w_error, output_dir):
-    """Génère une image de comparaison."""
-    match_id = csv_path.stem.replace("coord_", "")
-
-    try:
-        # Charger données
-        df = pd.read_csv(csv_path)
-        with open(json_path, "r") as f:
-            compressed_data = json.load(f)
-
-        # Créer figure
-        colors = plt.cm.tab10(np.arange(10))
-        fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(20, 10))
-        fig.suptitle(
-            f"Match {match_id} - Compression MDL (w_error={w_error})",
-            fontsize=20,
-            fontweight="bold",
-        )
-
-        total_orig = 0
-        total_segments = 0
-
-        # Pour chaque joueur
-        for player_id in range(10):
-            x_col, y_col = f"x{player_id}", f"y{player_id}"
-
-            if x_col not in df.columns:
-                continue
-
-            # Original
-            mask = (df[x_col] != 0.0) | (df[y_col] != 0.0)
-            x_orig = df[x_col][mask].values
-            y_orig = df[y_col][mask].values
-
-            if len(x_orig) == 0:
-                continue
-
-            total_orig += len(x_orig)
-            color = colors[player_id]
-
-            # GRAPHE 1: Original
-            step = max(1, len(x_orig) // 500)
-            ax1.plot(
-                x_orig[::step],
-                y_orig[::step],
-                color=color,
-                linewidth=1.0,
-                alpha=0.45,
-                label=f"Joueur {player_id}",
-            )
-            ax1.scatter(
-                x_orig[::step],
-                y_orig[::step],
-                c=[color] * len(x_orig[::step]),
-                s=8,
-                alpha=0.3,
-            )
-
-            # GRAPHE 2: Compressé
-            player_data = next(
-                (p for p in compressed_data["players"] if p["player_id"] == player_id),
-                None,
-            )
-
-            if player_data:
-                segments = player_data["segments"]
-                total_segments += len(segments)
-
-                for seg in segments:
-                    ax2.plot(
-                        [seg["start"]["x"], seg["end"]["x"]],
-                        [seg["start"]["y"], seg["end"]["y"]],
-                        color=color,
-                        linewidth=1.0,
-                        alpha=0.45,
-                    )
-
-                if segments:
-                    xs = [seg["start"]["x"] for seg in segments] + [
-                        segments[-1]["end"]["x"]
-                    ]
-                    ys = [seg["start"]["y"] for seg in segments] + [
-                        segments[-1]["end"]["y"]
-                    ]
-                    ax2.scatter(
-                        xs,
-                        ys,
-                        c=[color] * len(xs),
-                        s=8,
-                        zorder=10,
-                        edgecolors="black",
-                        linewidth=0.5,
-                        alpha=0.3,
-                    )
-
-        # Configuration graphes
-        reduction = (1 - total_segments / total_orig) * 100 if total_orig > 0 else 0
-
-        ax1.set_title(f"Original: {total_orig} points", fontsize=14, fontweight="bold")
-        ax1.set_xlabel("X (coordonnées carte)", fontsize=12)
-        ax1.set_ylabel("Y (coordonnées carte)", fontsize=12)
-        ax1.grid(True, alpha=0.2, linestyle="--")
-        ax1.set_aspect("equal")
-        ax1.set_facecolor("#f8f8f8")
-
-        # Sauvegarder
-        output_path = output_dir / f"{match_id}_w{w_error}_comparison.png"
-        plt.tight_layout()
-        plt.savefig(output_path, dpi=150, bbox_inches="tight", facecolor="white")
-        plt.close()
-
-        return True, match_id, output_path.stat().st_size // 1024
-
-    except Exception as e:
-        return False, match_id, 0, str(e)
 
 
 def cmd_visualize(args):
@@ -740,7 +624,18 @@ def cmd_cluster(args):
         print(f"⚠️  Mode test : Limite de {args.max_files} fichiers.")
 
     # Lancement avec l'option de limitation
-    run_clustering(target_folder, max_files=args.max_files, algo=args.algo)
+    run_clustering(
+        target_folder,
+        max_files=args.max_files,
+        algo=args.algo,
+        min_length=args.min_length,
+        n_clusters=args.n_clusters,
+        damping=args.damping,
+        max_iter=args.max_iter,
+        w_perp=args.w_perp,
+        w_angle=args.w_angle,
+        w_par=args.w_par,
+    )
 
 
 # =============================================================================
@@ -882,7 +777,7 @@ def cmd_visu_network(args):
 
     # Sauvegarde du graphe dans output/ ET affichage si backend graphique dispo
     output_graph_path = str(OUTPUT_DIR / "markov_network.png")
-    plot_markov_network(results, min_len=2, output_path=output_graph_path)
+    plot_markov_network(results, min_len=args.min_len, output_path=output_graph_path)
 
 # =============================================================================
 # MAIN
@@ -1005,6 +900,34 @@ Exemples:
         default="affinity",
         help="Algorithme a utiliser ('affinity', 'kmeans' ou 'kmedoids')",
     )
+    parser_cluster.add_argument(
+        "--min_length", type=float, default=5.0,
+        help="Longueur minimale des segments inclus dans le clustering (defaut: 5.0)",
+    )
+    parser_cluster.add_argument(
+        "--n_clusters", type=int, default=50,
+        help="Nombre de clusters pour KMeans/KMedoids (defaut: 50)",
+    )
+    parser_cluster.add_argument(
+        "--damping", type=float, default=0.9,
+        help="Facteur d'amortissement pour Affinity Propagation (defaut: 0.9)",
+    )
+    parser_cluster.add_argument(
+        "--max_iter", type=int, default=400,
+        help="Nombre max d'iterations pour AP/KMedoids (defaut: 400)",
+    )
+    parser_cluster.add_argument(
+        "--w_perp", type=float, default=1.0,
+        help="Poids de la composante perpendiculaire TRACLUS (defaut: 1.0)",
+    )
+    parser_cluster.add_argument(
+        "--w_angle", type=float, default=1.0,
+        help="Poids de la composante angulaire TRACLUS (defaut: 1.0)",
+    )
+    parser_cluster.add_argument(
+        "--w_par", type=float, default=1.0,
+        help="Poids de la composante parallele TRACLUS (defaut: 1.0)",
+    )
 
     # RECODE
     parser_recode = subparsers.add_parser("recode", help="Recoder les clusters en format SPMF")
@@ -1013,7 +936,8 @@ Exemples:
     # VISU-NETWORK
     parser_network = subparsers.add_parser("visu_network", help="Visualiser les routes fréquentes en graphe")
     parser_network.add_argument("--min_support", type=int, default=10, help="Support minimal des motifs")
-    parser_network.add_argument("--max_length", type=int, default=8, help="Longueur maximale des motifs (défaut: 8)")
+    parser_network.add_argument("--max_length", type=int, default=8, help="Longueur maximale des motifs (defaut: 8)")
+    parser_network.add_argument("--min_len", type=int, default=2, help="Taille minimale des motifs affiches dans le graphe (defaut: 2)")
 
     # VISU-CLUSTER
     parser_visu_clust = subparsers.add_parser(

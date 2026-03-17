@@ -8,8 +8,17 @@ from .custom_kmedoids import CustomKMedoids
 from .structures import Segment, TrajectoryPoint
 
 
-def load_data(folder_path, limit=None, max_files=None):
-    """Charge les segments. max_files limite le nombre de fichiers JSON lus."""
+def load_data(folder_path, limit=None, max_files=None, min_length=5.0):
+    """Charge les segments. max_files limite le nombre de fichiers JSON lus.
+
+    Args:
+        folder_path: Chemin du dossier contenant les JSON compressés.
+        limit: Nombre maximum de segments à charger (None = pas de limite).
+        max_files: Nombre maximum de fichiers JSON à lire (None = tous).
+        min_length: Longueur minimale d'un segment pour être inclus dans le
+                    clustering. Les segments plus courts (micro-mouvements,
+                    arrêts) sont ignorés.
+    """
     folder = Path(folder_path)
 
     # On recupere tous les fichiers et on les trie
@@ -52,7 +61,7 @@ def load_data(folder_path, limit=None, max_files=None):
                         )
                         seg = Segment(p1, p2)
 
-                        if seg.length() > 5.0:
+                        if seg.length() > min_length:
                             all_segments.append(seg)
                             metadata.append(
                                 {"match_id": match_id, "seg_id": unique_seg_id}
@@ -70,9 +79,98 @@ def load_data(folder_path, limit=None, max_files=None):
     return all_segments, metadata
 
 
-def run_clustering(target_folder, max_files=None, algo="affinity"):
-    # On passe le parametre max_files a load_data
-    segments, meta = load_data(target_folder, max_files=max_files)
+def compute_traclus_similarity(segments, w_perp=1.0, w_angle=1.0, w_par=1.0):
+    """Calcule la matrice de similarité TRACLUS entre segments.
+
+    Combine trois composantes de distance :
+    - Perpendiculaire (position relative des segments)
+    - Angulaire (différence d'orientation, pondérée par les longueurs)
+    - Parallèle (décalage le long de la direction)
+
+    Args:
+        segments: Liste de Segment.
+        w_perp: Poids de la composante perpendiculaire.
+        w_angle: Poids de la composante angulaire.
+        w_par: Poids de la composante parallèle.
+
+    Returns:
+        Matrice de similarité N×N (valeurs négatives de distance).
+    """
+    starts_flt = np.array(
+        [(s.start.x, s.start.y) for s in segments], dtype=np.float32
+    )
+    ends_flt = np.array(
+        [(s.end.x, s.end.y) for s in segments], dtype=np.float32
+    )
+    vectors = ends_flt - starts_flt
+    lengths = np.linalg.norm(vectors, axis=1)
+    lengths = np.clip(lengths, 1e-9, None)
+    directions = vectors / lengths[:, np.newaxis]
+
+    # Composante angulaire
+    cos_theta = np.clip(np.dot(directions, directions.T), -1.0, 1.0)
+    d_angle = (1.0 - cos_theta) * (lengths[:, np.newaxis] + lengths[np.newaxis, :])
+
+    # Composante perpendiculaire
+    vx = directions[:, 0:1]
+    vy = directions[:, 1:2]
+    vec_sx = starts_flt[np.newaxis, :, 0] - starts_flt[:, np.newaxis, 0]
+    vec_sy = starts_flt[np.newaxis, :, 1] - starts_flt[:, np.newaxis, 1]
+    vec_ex = ends_flt[np.newaxis, :, 0] - starts_flt[:, np.newaxis, 0]
+    vec_ey = ends_flt[np.newaxis, :, 1] - starts_flt[:, np.newaxis, 1]
+
+    cross_s = np.abs(vx * vec_sy - vy * vec_sx)
+    cross_e = np.abs(vx * vec_ey - vy * vec_ex)
+    sum_cross = cross_s + cross_e
+    d_perp = np.zeros_like(sum_cross)
+    mask = sum_cross > 0
+    d_perp[mask] = (cross_s[mask] ** 2 + cross_e[mask] ** 2) / sum_cross[mask]
+
+    # Composante parallèle
+    proj_s = vec_sx * vx + vec_sy * vy
+    proj_e = vec_ex * vx + vec_ey * vy
+    base_l = lengths[:, np.newaxis]
+    d_par = (
+        np.minimum(np.abs(proj_s), np.abs(proj_s - base_l))
+        + np.minimum(np.abs(proj_e), np.abs(proj_e - base_l))
+    )
+
+    # Combinaison pondérée
+    D_asym = w_perp * d_perp + w_angle * d_angle + w_par * d_par
+    len_mask = lengths[:, np.newaxis] > lengths[np.newaxis, :]
+    similarity_matrix = -np.where(len_mask, D_asym, D_asym.T)
+
+    return similarity_matrix
+
+
+def run_clustering(
+    target_folder,
+    max_files=None,
+    algo="affinity",
+    min_length=5.0,
+    n_clusters=50,
+    damping=0.9,
+    max_iter=400,
+    w_perp=1.0,
+    w_angle=1.0,
+    w_par=1.0,
+):
+    """Lance le clustering sur les segments compressés.
+
+    Args:
+        target_folder: Dossier contenant les JSON compressés.
+        max_files: Limiter le nombre de fichiers chargés.
+        algo: Algorithme ('affinity', 'kmeans', 'kmedoids').
+        min_length: Longueur minimale des segments à inclure.
+        n_clusters: Nombre de clusters pour KMeans/KMedoids.
+        damping: Facteur d'amortissement pour Affinity Propagation.
+        max_iter: Nombre max d'itérations pour AP/KMedoids.
+        w_perp: Poids TRACLUS perpendiculaire (AP/kmedoids).
+        w_angle: Poids TRACLUS angulaire (AP/kmedoids).
+        w_par: Poids TRACLUS parallèle (AP/kmedoids).
+    """
+    # On passe le parametre min_length a load_data
+    segments, meta = load_data(target_folder, max_files=max_files, min_length=min_length)
     n = len(segments)
 
     if n == 0:
@@ -111,7 +209,6 @@ def run_clustering(target_folder, max_files=None, algo="affinity"):
         X_scaled = scaler.fit_transform(X)
 
         # MiniBatchKMeans : traitement par lots, compatible avec n très grand
-        n_clusters = 50
         print(f"Clustering en {n_clusters} clusters (MiniBatchKMeans)...")
         kmeans = MiniBatchKMeans(
             n_clusters=n_clusters,
@@ -144,48 +241,10 @@ def run_clustering(target_folder, max_files=None, algo="affinity"):
             print(f"Chargement de la matrice depuis le cache : {cache_file}")
             similarity_matrix = np.load(cache_file)
         else:
-            print("Pre-calcul vectoriel des proprietes...")
-            starts_flt = np.array(
-                [(s.start.x, s.start.y) for s in segments], dtype=np.float32
+            print("Calcul matriciel des similarites TRACLUS...")
+            similarity_matrix = compute_traclus_similarity(
+                segments, w_perp=w_perp, w_angle=w_angle, w_par=w_par
             )
-            ends_flt = np.array(
-                [(s.end.x, s.end.y) for s in segments], dtype=np.float32
-            )
-            vectors = ends_flt - starts_flt
-            lengths = np.linalg.norm(vectors, axis=1)
-            lengths = np.clip(lengths, 1e-9, None)
-            directions = vectors / lengths[:, np.newaxis]
-
-            print("Calcul matriciel des similarites en cours (Ultra-Optimise)...")
-            cos_theta = np.clip(np.dot(directions, directions.T), -1.0, 1.0)
-            d_angle = (1.0 - cos_theta) * (lengths[:, np.newaxis] + lengths[np.newaxis, :])
-
-            vx = directions[:, 0:1]
-            vy = directions[:, 1:2]
-            vec_sx = starts_flt[np.newaxis, :, 0] - starts_flt[:, np.newaxis, 0]
-            vec_sy = starts_flt[np.newaxis, :, 1] - starts_flt[:, np.newaxis, 1]
-            vec_ex = ends_flt[np.newaxis, :, 0] - starts_flt[:, np.newaxis, 0]
-            vec_ey = ends_flt[np.newaxis, :, 1] - starts_flt[:, np.newaxis, 1]
-
-            cross_s = np.abs(vx * vec_sy - vy * vec_sx)
-            cross_e = np.abs(vx * vec_ey - vy * vec_ex)
-            sum_cross = cross_s + cross_e
-            d_perp = np.zeros_like(sum_cross)
-            mask = sum_cross > 0
-            d_perp[mask] = (cross_s[mask] ** 2 + cross_e[mask] ** 2) / sum_cross[mask]
-
-            proj_s = vec_sx * vx + vec_sy * vy
-            proj_e = vec_ex * vx + vec_ey * vy
-            base_l = lengths[:, np.newaxis]
-            d_par = (
-                np.minimum(np.abs(proj_s), np.abs(proj_s - base_l))
-                + np.minimum(np.abs(proj_e), np.abs(proj_e - base_l))
-            )
-
-            D_asym = d_perp + d_angle + d_par
-            len_mask = lengths[:, np.newaxis] > lengths[np.newaxis, :]
-            similarity_matrix = -np.where(len_mask, D_asym, D_asym.T)
-
             np.save(cache_file, similarity_matrix)
             print(f"Matrice sauvegardee dans le cache : {cache_file}")
 
@@ -194,7 +253,7 @@ def run_clustering(target_folder, max_files=None, algo="affinity"):
         np.fill_diagonal(similarity_matrix, med)
 
         print("Lancement Affinity Propagation (Custom)...")
-        af = CustomAffinityPropagation(damping=0.9, max_iter=400, verbose=True)
+        af = CustomAffinityPropagation(damping=damping, max_iter=max_iter, verbose=True)
         af.fit(similarity_matrix)
         labels = af.labels_
         n_clusters_found = (
@@ -225,48 +284,10 @@ def run_clustering(target_folder, max_files=None, algo="affinity"):
             print(f"Chargement de la matrice depuis le cache : {cache_file}")
             similarity_matrix = np.load(cache_file)
         else:
-            print("Pre-calcul vectoriel des proprietes...")
-            starts_flt = np.array(
-                [(s.start.x, s.start.y) for s in segments], dtype=np.float32
+            print("Calcul matriciel des similarites TRACLUS...")
+            similarity_matrix = compute_traclus_similarity(
+                segments, w_perp=w_perp, w_angle=w_angle, w_par=w_par
             )
-            ends_flt = np.array(
-                [(s.end.x, s.end.y) for s in segments], dtype=np.float32
-            )
-            vectors = ends_flt - starts_flt
-            lengths = np.linalg.norm(vectors, axis=1)
-            lengths = np.clip(lengths, 1e-9, None)
-            directions = vectors / lengths[:, np.newaxis]
-
-            print("Calcul matriciel des similarites en cours (Ultra-Optimise)...")
-            cos_theta = np.clip(np.dot(directions, directions.T), -1.0, 1.0)
-            d_angle = (1.0 - cos_theta) * (lengths[:, np.newaxis] + lengths[np.newaxis, :])
-
-            vx = directions[:, 0:1]
-            vy = directions[:, 1:2]
-            vec_sx = starts_flt[np.newaxis, :, 0] - starts_flt[:, np.newaxis, 0]
-            vec_sy = starts_flt[np.newaxis, :, 1] - starts_flt[:, np.newaxis, 1]
-            vec_ex = ends_flt[np.newaxis, :, 0] - starts_flt[:, np.newaxis, 0]
-            vec_ey = ends_flt[np.newaxis, :, 1] - starts_flt[:, np.newaxis, 1]
-
-            cross_s = np.abs(vx * vec_sy - vy * vec_sx)
-            cross_e = np.abs(vx * vec_ey - vy * vec_ex)
-            sum_cross = cross_s + cross_e
-            d_perp = np.zeros_like(sum_cross)
-            mask = sum_cross > 0
-            d_perp[mask] = (cross_s[mask] ** 2 + cross_e[mask] ** 2) / sum_cross[mask]
-
-            proj_s = vec_sx * vx + vec_sy * vy
-            proj_e = vec_ex * vx + vec_ey * vy
-            base_l = lengths[:, np.newaxis]
-            d_par = (
-                np.minimum(np.abs(proj_s), np.abs(proj_s - base_l))
-                + np.minimum(np.abs(proj_e), np.abs(proj_e - base_l))
-            )
-
-            D_asym = d_perp + d_angle + d_par
-            len_mask = lengths[:, np.newaxis] > lengths[np.newaxis, :]
-            similarity_matrix = -np.where(len_mask, D_asym, D_asym.T)
-
             np.save(cache_file, similarity_matrix)
             print(f"Matrice sauvegardee dans le cache : {cache_file}")
 
@@ -274,9 +295,8 @@ def run_clustering(target_folder, max_files=None, algo="affinity"):
         distance_matrix = -similarity_matrix
         np.fill_diagonal(distance_matrix, 0.0)
 
-        n_clusters = 50
         print(f"Lancement K-Médoïdes (Custom PAM) avec {n_clusters} clusters...")
-        km = CustomKMedoids(n_clusters=n_clusters, max_iter=300, random_state=42)
+        km = CustomKMedoids(n_clusters=n_clusters, max_iter=max_iter, random_state=42)
         km.fit(distance_matrix)
         labels = km.labels_
         n_clusters_found = len(np.unique(labels))
@@ -287,7 +307,7 @@ def run_clustering(target_folder, max_files=None, algo="affinity"):
         print(f"Algorithme inconnu : '{algo}'. Choisir 'affinity', 'kmeans' ou 'kmedoids'.")
         return
 
-    # 4. Sauvegarde
+    # Sauvegarde
     results = {}
     for idx, label in enumerate(labels):
         m_id = meta[idx]["match_id"]
@@ -296,10 +316,6 @@ def run_clustering(target_folder, max_files=None, algo="affinity"):
         if m_id not in results:
             results[m_id] = {}
         results[m_id][s_id] = int(label)
-
-    # Fix: Eviter le hardcoding et se baser sur target_folder
-    output_dir = target_path.parent.parent / "clusters"
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     folder_name = target_path.name
     filename = f"clusters_result_{folder_name}.json"
