@@ -36,82 +36,69 @@ class MDLCompressor:
         self.verbose = verbose
         self.geometry = GeometryUtils()
 
-    def _can_extend_segment(
-        self, trajectory: Trajectory, start_idx: int, end_idx: int
-    ) -> bool:
-        """Vérifie si on peut étendre le segment sans dépasser la tolérance.
-
-        Args:
-            trajectory: Trajectoire complète
-            start_idx: Index du point de départ
-            end_idx: Index du point d'arrivée
-
-        Returns:
-            True si toutes les distances perpendiculaires < w_error
-        """
-        if end_idx - start_idx < 2:
-            return True
-
-        p_start = trajectory[start_idx]
-        p_end = trajectory[end_idx]
-
-        # Extraire points intermédiaires
-        intermediate_points = np.array(
-            [[trajectory[i].x, trajectory[i].y] for i in range(start_idx + 1, end_idx)]
-        )
-
-        # Calcul vectorisé des distances perpendiculaires
-        d_perps = self.geometry.perpendicular_distances_vectorized(
-            intermediate_points,
-            np.array([p_start.x, p_start.y]),
-            np.array([p_end.x, p_end.y]),
-        )
-
-        # Toutes les distances doivent être < w_error
-        return np.all(d_perps < self.w_error)
-
     def compress_player_trajectory(self, trajectory: Trajectory) -> List[Segment]:
-        """Compresse une trajectoire avec seuil de tolérance.
+        """Compresse une trajectoire avec seuil de tolerance.
 
-        Algorithme:
-        1. Partir du premier point
-        2. Étendre le plus loin possible tant que toutes distances < w_error
-        3. Créer le segment et recommencer
+        Algorithme glouton optimise :
+        1. Extraire TOUTES les coordonnees en un seul tableau numpy (une fois pour toute
+           la trajectoire) -- elimine les N*k acces Python a trajectory[i].x / .y
+        2. Dans la boucle interne, passer une VUE numpy O(1) a
+           perpendicular_distances_vectorized (slice = zero allocation, zero copie)
+           au lieu d'une list-comprehension O(k).
+           Meme chemin de calcul qu'avant -> resultats numeriquement IDENTIQUES bit a bit.
+        3. Briser des que la tolerance est depassee (inchange)
+
+        Note : la formule inlinee (pts-a) - outer(t,v) diverge de pts - (a + outer(t,v))
+        a 1 ULP pres (IEEE 754 : x-(a+b) != (x-a)-b). En reutilisant exactement
+        perpendicular_distances_vectorized on evite toute divergence numerique.
 
         Args:
-            trajectory: Trajectoire du joueur à compresser
+            trajectory: Trajectoire du joueur a compresser
 
         Returns:
-            Liste de segments compressés
+            Liste de segments comprimes
         """
         if len(trajectory) < 2:
             return []
 
+        n = len(trajectory)
+        # Extraction unique -- elimine k list comprehensions par iteration interne.
+        # La boucle interne appelait sinon [[traj[i].x, traj[i].y] for i in range(...)]
+        # soit O(k) Python pur a chaque end_idx.
+        all_xy = np.array([[p.x, p.y] for p in trajectory.points])
+
         segments = []
         start_idx = 0
 
-        while start_idx < len(trajectory) - 1:
-            # Chercher le point le plus loin qui respecte la tolérance
+        while start_idx < n - 1:
             best_idx = start_idx + 1
+            p_start = all_xy[start_idx]
 
-            for end_idx in range(start_idx + 2, len(trajectory)):
-                if self._can_extend_segment(trajectory, start_idx, end_idx):
-                    best_idx = end_idx
-                else:
-                    # Seuil dépassé, on s'arrête
-                    break
+            for end_idx in range(start_idx + 2, n):
+                p_end = all_xy[end_idx]
 
-            # Créer le segment
-            segment = Segment(start=trajectory[start_idx], end=trajectory[best_idx])
-            segments.append(segment)
+                # Vue numpy O(1) : zero allocation, zero copie, zero list comprehension.
+                # Equivalent a np.array([[traj[i].x, traj[i].y] for i in range(s+1,e)])
+                # mais sans construire de nouvel objet Python.
+                intermediates = all_xy[start_idx + 1 : end_idx]
 
-            if self.verbose:
-                num_skipped = best_idx - start_idx - 1
-                print(
-                    f"  Segment {len(segments)}: [{start_idx}→{best_idx}] "
-                    f"length={segment.length():.2f}, skipped={num_skipped}"
+                # Meme appel qu'avant -> resultats bit-a-bit identiques a l'original
+                d_perps = self.geometry.perpendicular_distances_vectorized(
+                    intermediates, p_start, p_end
                 )
 
+                if np.all(d_perps < self.w_error):
+                    best_idx = end_idx
+                else:
+                    break
+
+            segment = Segment(start=trajectory[start_idx], end=trajectory[best_idx])
+            segments.append(segment)
+            if self.verbose:
+                print(
+                    f"  Segment {len(segments)}: [{start_idx}->{best_idx}] "
+                    f"length={segment.length():.2f}, skipped={best_idx-start_idx-1}"
+                )
             start_idx = best_idx
 
         return segments
