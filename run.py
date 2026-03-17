@@ -1001,9 +1001,9 @@ Exemples:
     parser_cluster.add_argument(
         "--algo",
         type=str,
-        choices=["affinity", "kmeans"],
+        choices=["affinity", "kmeans", "kmedoids"],
         default="affinity",
-        help="Algorithme a utiliser ('affinity' ou 'kmeans')",
+        help="Algorithme a utiliser ('affinity', 'kmeans' ou 'kmedoids')",
     )
 
     # RECODE

@@ -4,6 +4,7 @@ from pathlib import Path
 
 # Imports locaux
 from .custom_ap import CustomAffinityPropagation
+from .custom_kmedoids import CustomKMedoids
 from .structures import Segment, TrajectoryPoint
 
 
@@ -203,8 +204,87 @@ def run_clustering(target_folder, max_files=None, algo="affinity"):
         )
         print(f"\nTERMINE ! {n_clusters_found} clusters trouves.")
 
+    # ========================================================
+    # BRANCHE K-MÉDOÏDES : Réutilise la même matrice TRACLUS que
+    # l'Affinity Propagation, mais choisit des représentants réels.
+    # Limité à ~5000 segments (matrice N×N en RAM).
+    # ========================================================
+    elif algo == "kmedoids":
+        MAX_SEGMENTS_KMEDOIDS = 5000
+        if n > MAX_SEGMENTS_KMEDOIDS:
+            print(f"⚠️  ERREUR : K-Médoïdes est limité à {MAX_SEGMENTS_KMEDOIDS} segments.")
+            print(f"   {n} segments détectés. Réduisez avec --max_files.")
+            print(f"   Alternative sans limite : --algo kmeans")
+            return
+
+        cache_dir = target_path.parent.parent / "cache"
+        cache_dir.mkdir(parents=True, exist_ok=True)
+        cache_file = cache_dir / f"sim_matrix_{target_path.name}_n{n}.npy"
+
+        if cache_file.exists():
+            print(f"Chargement de la matrice depuis le cache : {cache_file}")
+            similarity_matrix = np.load(cache_file)
+        else:
+            print("Pre-calcul vectoriel des proprietes...")
+            starts_flt = np.array(
+                [(s.start.x, s.start.y) for s in segments], dtype=np.float32
+            )
+            ends_flt = np.array(
+                [(s.end.x, s.end.y) for s in segments], dtype=np.float32
+            )
+            vectors = ends_flt - starts_flt
+            lengths = np.linalg.norm(vectors, axis=1)
+            lengths = np.clip(lengths, 1e-9, None)
+            directions = vectors / lengths[:, np.newaxis]
+
+            print("Calcul matriciel des similarites en cours (Ultra-Optimise)...")
+            cos_theta = np.clip(np.dot(directions, directions.T), -1.0, 1.0)
+            d_angle = (1.0 - cos_theta) * (lengths[:, np.newaxis] + lengths[np.newaxis, :])
+
+            vx = directions[:, 0:1]
+            vy = directions[:, 1:2]
+            vec_sx = starts_flt[np.newaxis, :, 0] - starts_flt[:, np.newaxis, 0]
+            vec_sy = starts_flt[np.newaxis, :, 1] - starts_flt[:, np.newaxis, 1]
+            vec_ex = ends_flt[np.newaxis, :, 0] - starts_flt[:, np.newaxis, 0]
+            vec_ey = ends_flt[np.newaxis, :, 1] - starts_flt[:, np.newaxis, 1]
+
+            cross_s = np.abs(vx * vec_sy - vy * vec_sx)
+            cross_e = np.abs(vx * vec_ey - vy * vec_ex)
+            sum_cross = cross_s + cross_e
+            d_perp = np.zeros_like(sum_cross)
+            mask = sum_cross > 0
+            d_perp[mask] = (cross_s[mask] ** 2 + cross_e[mask] ** 2) / sum_cross[mask]
+
+            proj_s = vec_sx * vx + vec_sy * vy
+            proj_e = vec_ex * vx + vec_ey * vy
+            base_l = lengths[:, np.newaxis]
+            d_par = (
+                np.minimum(np.abs(proj_s), np.abs(proj_s - base_l))
+                + np.minimum(np.abs(proj_e), np.abs(proj_e - base_l))
+            )
+
+            D_asym = d_perp + d_angle + d_par
+            len_mask = lengths[:, np.newaxis] > lengths[np.newaxis, :]
+            similarity_matrix = -np.where(len_mask, D_asym, D_asym.T)
+
+            np.save(cache_file, similarity_matrix)
+            print(f"Matrice sauvegardee dans le cache : {cache_file}")
+
+        # Conversion similarité → distance (similarity_matrix = -D_asym, donc D = -similarity_matrix)
+        distance_matrix = -similarity_matrix
+        np.fill_diagonal(distance_matrix, 0.0)
+
+        n_clusters = 50
+        print(f"Lancement K-Médoïdes (Custom PAM) avec {n_clusters} clusters...")
+        km = CustomKMedoids(n_clusters=n_clusters, max_iter=300, random_state=42)
+        km.fit(distance_matrix)
+        labels = km.labels_
+        n_clusters_found = len(np.unique(labels))
+        print(f"\nTERMINE ! {n_clusters_found} clusters trouvés.")
+        print(f"Médoïdes (indices globaux) : {km.medoid_indices_}")
+
     else:
-        print(f"Algorithme inconnu : '{algo}'. Choisir 'affinity' ou 'kmeans'.")
+        print(f"Algorithme inconnu : '{algo}'. Choisir 'affinity', 'kmeans' ou 'kmedoids'.")
         return
 
     # 4. Sauvegarde
