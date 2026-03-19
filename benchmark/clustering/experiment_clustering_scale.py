@@ -39,6 +39,17 @@ from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # ---------------------------------------------------------------------------
+# Forcer l'utilisation de TOUS les threads CPU pour les libs numériques.
+# Doit être fait AVANT l'import de numpy/sklearn (sinon ignoré).
+# Sur Ryzen 5 3600 (6 cœurs / 12 threads) : OpenBLAS, MKL et OpenMP
+# utiliseront les 12 threads pour les opérations matricielles internes.
+# ---------------------------------------------------------------------------
+os.environ.setdefault("OMP_NUM_THREADS",      str(os.cpu_count() or 1))
+os.environ.setdefault("MKL_NUM_THREADS",      str(os.cpu_count() or 1))
+os.environ.setdefault("OPENBLAS_NUM_THREADS", str(os.cpu_count() or 1))
+os.environ.setdefault("NUMEXPR_NUM_THREADS",  str(os.cpu_count() or 1))
+
+# ---------------------------------------------------------------------------
 # Résolution du chemin projet
 # scripts/clustering/ → parents[2] → racine du projet
 # ---------------------------------------------------------------------------
@@ -68,11 +79,13 @@ from config import COMPRESSED_DIR
 # ---------------------------------------------------------------------------
 # PARAMÈTRES DU BENCHMARK
 # ---------------------------------------------------------------------------
-N_LIST: list[int] = [500, 1000, 2500, 5000, 10000, 20000, 30000]
+N_LIST: list[int] = [500, 1000, 2500, 5000, 10000, 20000, 30000, 40000, 50000]
 N_ITERATIONS: int = 3          # Itérations par taille (moyenne + écart-type)
 N_CLUSTERS_KMEANS: int = 50    # Clusters fixes pour KMeans
 N_CLUSTERS_KMEDOIDS: int = 50  # Clusters fixes pour KMedoids
-AP_MAX_N: int = 5000           # AP skippée au-delà — O(N²) message passing
+AP_MAX_N: int = 7500           # AP skippée au-delà — O(N²) message passing trop long
+N_CALIB: int = 300             # Taille de calibration pour l'estimation du temps
+RAM_LIMIT_GB: float = 26.0    # Limite critique RAM (32 Go - marge OS)
 
 # ---------------------------------------------------------------------------
 # CHEMINS DE SORTIE
@@ -168,7 +181,7 @@ def _silhouette(D: np.ndarray, labels: np.ndarray) -> float:
         return float("nan")
     try:
         return float(silhouette_score(D_v.astype(np.float64), l_v,
-                                      metric="precomputed"))
+                                      metric="precomputed", n_jobs=-1))
     except Exception:
         return float("nan")
 
@@ -270,7 +283,8 @@ def _iteration_worker(args: tuple):
 
     # ── ALGO 3 : CustomAffinityPropagation — SKIP si N > AP_MAX_N ────────
     if N > AP_MAX_N:
-        msgs.append(f"  [N={N:>6} it={it}] AP        : SKIP (N > {AP_MAX_N})")
+        msgs.append(f"  [N={N:>6} it={it}] AP        : AP ignoré pour N={N} "
+                    f"(Temps estimé trop long — seuil={AP_MAX_N})")
         results.append(dict(N=N, it=it, algo="AffinityPropagation",
                             t=float("nan"), sil=float("nan"), k=None))
     else:
@@ -298,28 +312,29 @@ def _iteration_worker(args: tuple):
 
 def _max_workers(N: int) -> int:
     """
-    Nombre max de workers parallèles selon N et les ressources mémoire.
+    Nombre max de workers parallèles selon N — adapté pour 32 Go RAM.
 
     Chaque worker alloue ~3× la taille de la matrice D :
       - D elle-même (float32, N×N)
       - S = -D pour AP (float64, N×N)  — conservé même si AP est skippée
       - Intermédiaires numpy (argmin, np.ix_, silhouette_score)
 
-    Seuils conservatifs pour 16 GB RAM disponible :
-      N ≤ 1000  →  D ≈   4 MB × 3 × W  → W=N_ITER workers (~  36 MB) ✓
-      N ≤ 2500  →  D ≈  25 MB × 3 × W  → W=4 workers     (~ 300 MB) ✓
-      N ≤ 5000  →  D ≈ 100 MB × 3 × W  → W=2 workers     (~ 600 MB) ✓
-      N > 5000  →  D ≈ 400 MB × 3 × 1  → W=1 worker      (~ 1.2 GB) ✓
+    Seuils conservatifs pour 32 Go RAM (26 Go utilisables) :
+      N ≤ 2500   →  D ≈   25 MB × 3 × W → W=N_ITER workers  (~225 MB) ✓
+      N ≤ 5000   →  D ≈  100 MB × 3 × W → W=3 workers       (~900 MB) ✓
+      N ≤ 10000  →  D ≈  400 MB × 3 × W → W=2 workers       (~2.4 GB) ✓
+      N ≤ 20000  →  D ≈  1.6 GB × 3 × 1 → W=1 worker        (~4.8 GB) ✓
+      N > 20000  →  D ≈  3.6+ GB × 3 × 1→ W=1 worker        (~10+ GB) ⚠
     """
     n_cpu = os.cpu_count() or 1
-    if N <= 1000:
+    if N <= 2500:
         return min(N_ITERATIONS, n_cpu)
-    elif N <= 2500:
-        return min(N_ITERATIONS, n_cpu, 4)
     elif N <= 5000:
+        return min(N_ITERATIONS, n_cpu, 3)
+    elif N <= 10000:
         return min(N_ITERATIONS, 2)
     else:
-        return 1  # séquentiel — matrice trop grosse pour paralléliser sans OOM
+        return 1  # séquentiel — matrice N×N trop volumineuse pour paralléliser
 
 
 # ===========================================================================
@@ -381,7 +396,8 @@ def estimate_runtime(starts_all: np.ndarray, ends_all: np.ndarray) -> float:
     # Silhouette × 1 algo
     t0 = time.perf_counter()
     try:
-        silhouette_score(D_c.astype(np.float64), km_lab, metric="precomputed")
+        silhouette_score(D_c.astype(np.float64), km_lab,
+                         metric="precomputed", n_jobs=-1)
     except Exception:
         pass
     t_sil = time.perf_counter() - t0
@@ -474,8 +490,12 @@ def run_benchmark(all_segments: list) -> None:
             continue
 
         workers  = _max_workers(N)
-        ram_peak = N ** 2 * 4 * 3 * workers / 1e6
-        log.info(f"  Workers : {workers}  |  RAM estimée (peak) : {ram_peak:.0f} MB")
+        # RAM peak : D float32 + S float64 + intermédiaires ≈ N*N*8*2 par worker
+        ram_peak_gb = (N * N * 8) / (1024**3) * 2 * workers
+        log.info(f"  Workers : {workers}  |  RAM estimée (peak) : {ram_peak_gb:.1f} Go")
+        if ram_peak_gb > RAM_LIMIT_GB:
+            log.warning(f"  ⚠  RAM estimée ({ram_peak_gb:.1f} Go) dépasse la limite "
+                        f"de sécurité ({RAM_LIMIT_GB} Go). Risque d'OOM !")
 
         args_list = [
             (N, it, N * 1000 + it, starts_all, ends_all)
@@ -539,10 +559,6 @@ def run_benchmark(all_segments: list) -> None:
 
 
 # ===========================================================================
-    log.info("=" * 72)
-
-
-# ===========================================================================
 # VISUALISATION — Double graphique
 # ===========================================================================
 
@@ -571,7 +587,7 @@ def plot_heavy_benchmark(csv_path: Path) -> None:
     LABELS  = {
         "KMeans":              "KMeans (MiniBatch, euclidien)",
         "KMedoids":            "KMedoids (PAM custom, TRACLUS)",
-        "AffinityPropagation": "AffinityPropagation (custom, TRACLUS) — skippé N>5k",
+        "AffinityPropagation": f"AffinityPropagation (custom, TRACLUS) — skippé N>{AP_MAX_N}",
     }
 
     fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 7))

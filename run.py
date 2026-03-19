@@ -14,10 +14,17 @@ Usage:
 """
 
 import argparse
+import logging
 from pathlib import Path
 
 import matplotlib
 import pandas as pd
+
+# Configuration du logging pour que les messages du package soient visibles
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(levelname)s | %(name)s | %(message)s",
+)
 
 from dota_analytics.clustering import run_clustering
 

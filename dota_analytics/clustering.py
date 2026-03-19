@@ -1,4 +1,5 @@
 import json
+import logging
 import numpy as np
 from pathlib import Path
 
@@ -6,6 +7,8 @@ from pathlib import Path
 from .custom_ap import CustomAffinityPropagation
 from .custom_kmedoids import CustomKMedoids
 from .structures import Segment, TrajectoryPoint
+
+logger = logging.getLogger(__name__)
 
 
 def load_data(folder_path, limit=None, max_files=None, min_length=5.0):
@@ -24,12 +27,12 @@ def load_data(folder_path, limit=None, max_files=None, min_length=5.0):
     # On recupere tous les fichiers et on les trie
     files = sorted(list(folder.glob("*.json")))
 
-    print(f"Recherche dans : {folder}")
-    print(f"   -> {len(files)} fichiers disponibles au total.")
+    logger.info("Recherche dans : %s", folder)
+    logger.info("   -> %d fichiers disponibles au total.", len(files))
 
     if max_files is not None and max_files < len(files):
         files = files[:max_files]
-        print(f"   Restriction : On ne charge que les {max_files} premiers fichiers.")
+        logger.info("   Restriction : On ne charge que les %d premiers fichiers.", max_files)
 
     all_segments = []
     metadata = []
@@ -71,8 +74,8 @@ def load_data(folder_path, limit=None, max_files=None, min_length=5.0):
 
             # Limite de segments pour eviter l'explosion memoire
             if limit is not None and len(all_segments) > limit:
-                print(
-                    f"Limite de segments ({limit}) atteinte. On arrete le chargement."
+                logger.info(
+                    "Limite de segments (%d) atteinte. On arrete le chargement.", limit
                 )
                 return all_segments[:limit], metadata[:limit]
 
@@ -174,10 +177,10 @@ def run_clustering(
     n = len(segments)
 
     if n == 0:
-        print("Aucun segment charge.")
+        logger.warning("Aucun segment charge.")
         return
 
-    print(f"Analyse de {n} segments...")
+    logger.info("Analyse de %d segments...", n)
 
     target_path = Path(target_folder)
     output_dir = target_path.parent.parent / "clusters"
@@ -191,7 +194,7 @@ def run_clustering(
         from sklearn.cluster import MiniBatchKMeans
         from sklearn.preprocessing import StandardScaler
 
-        print("Extraction des features pour K-Means...")
+        logger.info("Extraction des features pour K-Means...")
         features = []
         for s in segments:
             mid_x = (s.start.x + s.end.x) / 2.0
@@ -204,12 +207,12 @@ def run_clustering(
         X = np.array(features, dtype=np.float32)
 
         # Normalisation pour équilibrer les features (coordonnées vs dx/dy)
-        print("Normalisation des features...")
+        logger.info("Normalisation des features...")
         scaler = StandardScaler()
         X_scaled = scaler.fit_transform(X)
 
         # MiniBatchKMeans : traitement par lots, compatible avec n très grand
-        print(f"Clustering en {n_clusters} clusters (MiniBatchKMeans)...")
+        logger.info("Clustering en %d clusters (MiniBatchKMeans)...", n_clusters)
         kmeans = MiniBatchKMeans(
             n_clusters=n_clusters,
             random_state=42,
@@ -219,7 +222,7 @@ def run_clustering(
         )
         labels = kmeans.fit_predict(X_scaled)
         n_clusters_found = n_clusters
-        print(f"\nTERMINE ! {n_clusters_found} clusters trouves.")
+        logger.info("TERMINE ! %d clusters trouves.", n_clusters_found)
 
     # ========================================================
     # BRANCHE AFFINITY PROPAGATION : Calcul de la matrice N×N
@@ -228,9 +231,9 @@ def run_clustering(
     elif algo == "affinity":
         MAX_SEGMENTS_AFFINITY = 5000
         if n > MAX_SEGMENTS_AFFINITY:
-            print(f"⚠️  ERREUR : Affinity Propagation est limite a {MAX_SEGMENTS_AFFINITY} segments.")
-            print(f"   {n} segments detectes. Reduisez avec --max_files.")
-            print(f"   Alternative sans limite : --algo kmeans")
+            logger.error("Affinity Propagation est limite a %d segments.", MAX_SEGMENTS_AFFINITY)
+            logger.error("   %d segments detectes. Reduisez avec --max_files.", n)
+            logger.error("   Alternative sans limite : --algo kmeans")
             return
 
         cache_dir = target_path.parent.parent / "cache"
@@ -246,13 +249,13 @@ def run_clustering(
                 segments, w_perp=w_perp, w_angle=w_angle, w_par=w_par
             )
             np.save(cache_file, similarity_matrix)
-            print(f"Matrice sauvegardee dans le cache : {cache_file}")
+            logger.info("Matrice sauvegardee dans le cache : %s", cache_file)
 
         # Remplissage diagonale (mediane)
         med = np.median(similarity_matrix)
         np.fill_diagonal(similarity_matrix, med)
 
-        print("Lancement Affinity Propagation (Custom)...")
+        logger.info("Lancement Affinity Propagation (Custom)...")
         af = CustomAffinityPropagation(damping=damping, max_iter=max_iter, verbose=True)
         af.fit(similarity_matrix)
         labels = af.labels_
@@ -261,7 +264,7 @@ def run_clustering(
             if af.cluster_centers_indices_ is not None
             else 0
         )
-        print(f"\nTERMINE ! {n_clusters_found} clusters trouves.")
+        logger.info("TERMINE ! %d clusters trouves.", n_clusters_found)
 
     # ========================================================
     # BRANCHE K-MÉDOÏDES : Réutilise la même matrice TRACLUS que
@@ -271,9 +274,9 @@ def run_clustering(
     elif algo == "kmedoids":
         MAX_SEGMENTS_KMEDOIDS = 5000
         if n > MAX_SEGMENTS_KMEDOIDS:
-            print(f"⚠️  ERREUR : K-Médoïdes est limité à {MAX_SEGMENTS_KMEDOIDS} segments.")
-            print(f"   {n} segments détectés. Réduisez avec --max_files.")
-            print(f"   Alternative sans limite : --algo kmeans")
+            logger.error("K-Médoïdes est limité à %d segments.", MAX_SEGMENTS_KMEDOIDS)
+            logger.error("   %d segments détectés. Réduisez avec --max_files.", n)
+            logger.error("   Alternative sans limite : --algo kmeans")
             return
 
         cache_dir = target_path.parent.parent / "cache"
@@ -281,30 +284,30 @@ def run_clustering(
         cache_file = cache_dir / f"sim_matrix_{target_path.name}_n{n}.npy"
 
         if cache_file.exists():
-            print(f"Chargement de la matrice depuis le cache : {cache_file}")
+            logger.info("Chargement de la matrice depuis le cache : %s", cache_file)
             similarity_matrix = np.load(cache_file)
         else:
-            print("Calcul matriciel des similarites TRACLUS...")
+            logger.info("Calcul matriciel des similarites TRACLUS...")
             similarity_matrix = compute_traclus_similarity(
                 segments, w_perp=w_perp, w_angle=w_angle, w_par=w_par
             )
             np.save(cache_file, similarity_matrix)
-            print(f"Matrice sauvegardee dans le cache : {cache_file}")
+            logger.info("Matrice sauvegardee dans le cache : %s", cache_file)
 
         # Conversion similarité → distance (similarity_matrix = -D_asym, donc D = -similarity_matrix)
         distance_matrix = -similarity_matrix
         np.fill_diagonal(distance_matrix, 0.0)
 
-        print(f"Lancement K-Médoïdes (Custom PAM) avec {n_clusters} clusters...")
+        logger.info("Lancement K-Médoïdes (Custom PAM) avec %d clusters...", n_clusters)
         km = CustomKMedoids(n_clusters=n_clusters, max_iter=max_iter, random_state=42)
         km.fit(distance_matrix)
         labels = km.labels_
         n_clusters_found = len(np.unique(labels))
-        print(f"\nTERMINE ! {n_clusters_found} clusters trouvés.")
-        print(f"Médoïdes (indices globaux) : {km.medoid_indices_}")
+        logger.info("TERMINE ! %d clusters trouvés.", n_clusters_found)
+        logger.info("Médoïdes (indices globaux) : %s", km.medoid_indices_)
 
     else:
-        print(f"Algorithme inconnu : '{algo}'. Choisir 'affinity', 'kmeans' ou 'kmedoids'.")
+        logger.error("Algorithme inconnu : '%s'. Choisir 'affinity', 'kmeans' ou 'kmedoids'.", algo)
         return
 
     # Sauvegarde
@@ -324,4 +327,4 @@ def run_clustering(
     with open(full_output_path, "w") as f:
         json.dump(results, f, indent=2)
 
-    print(f"Resultats sauvegardes dans : {full_output_path}")
+    logger.info("Resultats sauvegardes dans : %s", full_output_path)
