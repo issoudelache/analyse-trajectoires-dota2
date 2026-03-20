@@ -35,19 +35,23 @@ import math
 import csv
 import logging
 import time
+import argparse
 from pathlib import Path
 from concurrent.futures import ProcessPoolExecutor, as_completed
 
 # ---------------------------------------------------------------------------
-# Forcer l'utilisation de TOUS les threads CPU pour les libs numériques.
-# Doit être fait AVANT l'import de numpy/sklearn (sinon ignoré).
-# Sur Ryzen 5 3600 (6 cœurs / 12 threads) : OpenBLAS, MKL et OpenMP
-# utiliseront les 12 threads pour les opérations matricielles internes.
 # ---------------------------------------------------------------------------
-os.environ.setdefault("OMP_NUM_THREADS",      str(os.cpu_count() or 1))
-os.environ.setdefault("MKL_NUM_THREADS",      str(os.cpu_count() or 1))
-os.environ.setdefault("OPENBLAS_NUM_THREADS", str(os.cpu_count() or 1))
-os.environ.setdefault("NUMEXPR_NUM_THREADS",  str(os.cpu_count() or 1))
+# Threads numpy/BLAS — limités pour éviter la surallocation quand
+# plusieurs workers parallèles tournent simultanément.
+# Doit être fait AVANT l'import de numpy/sklearn (sinon ignoré).
+# ---------------------------------------------------------------------------
+# Limiter les threads par worker pour éviter la surallocation
+# (5 workers × 4 threads = 20 sur 12 cœurs → contention raisonnable)
+_THREADS_PER_WORKER = str(max(1, (os.cpu_count() or 1) // 3))
+os.environ.setdefault("OMP_NUM_THREADS",      _THREADS_PER_WORKER)
+os.environ.setdefault("MKL_NUM_THREADS",      _THREADS_PER_WORKER)
+os.environ.setdefault("OPENBLAS_NUM_THREADS", _THREADS_PER_WORKER)
+os.environ.setdefault("NUMEXPR_NUM_THREADS",  _THREADS_PER_WORKER)
 
 # ---------------------------------------------------------------------------
 # Résolution du chemin projet
@@ -79,23 +83,62 @@ from config import COMPRESSED_DIR
 # ---------------------------------------------------------------------------
 # PARAMÈTRES DU BENCHMARK
 # ---------------------------------------------------------------------------
-N_LIST: list[int] = [500, 1000, 2500, 5000, 10000, 20000, 30000, 40000, 50000]
-N_ITERATIONS: int = 3          # Itérations par taille (moyenne + écart-type)
-N_CLUSTERS_KMEANS: int = 50    # Clusters fixes pour KMeans
-N_CLUSTERS_KMEDOIDS: int = 50  # Clusters fixes pour KMedoids
-AP_MAX_N: int = 7500           # AP skippée au-delà — O(N²) message passing trop long
+# Tailles par mode :
+#   fast = KMeans + KMedoids seulement → on peut pousser très loin
+#   ap   = Propagation d'affinité seule → N modéré (coûteux)
+#   all  = les 3 ensemble (ancien comportement)
+N_LIST_FAST: list[int] = [250, 500, 750, 1000, 1500, 2000, 2500, 3000, 4000,
+                          5000, 6000, 7000, 8000, 9000, 10000, 12000, 15000,
+                          20000, 25000, 30000]
+N_LIST_AP:   list[int] = [250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2500,
+                          3000, 3500, 4000, 4500, 5000, 6000, 7000, 8000]
+N_LIST_ALL:  list[int] = [250, 500, 750, 1000, 1250, 1500, 1750, 2000, 2500, 3000,
+                          3500, 4000, 4500, 5000, 5500, 6000, 6500, 7000, 7500,
+                          8000, 8500, 9000, 9500, 10000]
+
+N_ITERATIONS: int = 7          # Itérations par taille (moyenne + écart-type)
+N_CLUSTERS_KMEANS: int = 12    # Clusters fixes pour KMeans  (optimal k search → k=12)
+N_CLUSTERS_KMEDOIDS: int = 12  # Clusters fixes pour KMedoids (optimal k search → k=12)
+AP_MAX_N: int = 10000          # AP activée pour toutes les tailles ≤ seuil
 N_CALIB: int = 300             # Taille de calibration pour l'estimation du temps
 RAM_LIMIT_GB: float = 26.0    # Limite critique RAM (32 Go - marge OS)
 
+# Mode par défaut — sera surchargé par --mode en CLI
+BENCH_MODE: str = "all"
+N_LIST: list[int] = N_LIST_ALL
+
 # ---------------------------------------------------------------------------
-# CHEMINS DE SORTIE
+# CHEMINS DE SORTIE (ajustés par _configure_mode)
 # ---------------------------------------------------------------------------
 BENCH_DIR = PROJECT_ROOT / "output" / "benchmark_clustering"
 BENCH_DIR.mkdir(parents=True, exist_ok=True)
 
-CSV_PATH  = BENCH_DIR / "heavy_benchmark_results.csv"
-PLOT_PATH = BENCH_DIR / "clustering_stress_test.png"
-LOG_PATH  = BENCH_DIR / "benchmark.log"
+CSV_PATH  = BENCH_DIR / "mid_benchmark_results_k12.csv"
+PLOT_PATH = BENCH_DIR / "mid_clustering_stress_test_k12.png"
+LOG_PATH  = BENCH_DIR / "mid_benchmark_k12.log"
+
+
+def _configure_mode(mode: str) -> None:
+    """Configure les variables globales selon le mode choisi."""
+    global BENCH_MODE, N_LIST, CSV_PATH, PLOT_PATH, LOG_PATH, AP_MAX_N
+    BENCH_MODE = mode
+    if mode == "fast":
+        N_LIST    = N_LIST_FAST
+        CSV_PATH  = BENCH_DIR / "benchmark_fast_k12.csv"
+        PLOT_PATH = BENCH_DIR / "benchmark_fast_k12.png"
+        LOG_PATH  = BENCH_DIR / "benchmark_fast_k12.log"
+        AP_MAX_N  = 0  # Désactive AP complètement
+    elif mode == "ap":
+        N_LIST    = N_LIST_AP
+        CSV_PATH  = BENCH_DIR / "benchmark_ap_k12.csv"
+        PLOT_PATH = BENCH_DIR / "benchmark_ap_k12.png"
+        LOG_PATH  = BENCH_DIR / "benchmark_ap_k12.log"
+        AP_MAX_N  = 999_999  # AP partout
+    else:  # "all"
+        N_LIST    = N_LIST_ALL
+        CSV_PATH  = BENCH_DIR / "mid_benchmark_results_k12.csv"
+        PLOT_PATH = BENCH_DIR / "mid_clustering_stress_test_k12.png"
+        LOG_PATH  = BENCH_DIR / "mid_benchmark_k12.log"
 
 # Logger module-level — configuré dans main() pour éviter les double-handlers
 # quand les workers réimportent ce module (start method 'spawn').
@@ -191,7 +234,7 @@ def _silhouette(D: np.ndarray, labels: np.ndarray) -> float:
 # ===========================================================================
 
 CSV_HEADER = ["N", "Iteration", "Algorithm", "Time_Seconds",
-              "Silhouette_Score", "N_Clusters_Found"]
+              "Silhouette_Score", "N_Clusters_Found", "Matrix_Time_Seconds"]
 
 
 def init_csv(path: Path) -> None:
@@ -203,10 +246,10 @@ def init_csv(path: Path) -> None:
         log.info(f"CSV existant (append) : {path}  ← reprise sans écrasement")
 
 
-def append_row(path: Path, N, it, algo, t, sil, k) -> None:
+def append_row(path: Path, N, it, algo, t, sil, k, t_mat=None) -> None:
     """Écrit une ligne CSV immédiatement. Appelé depuis le main process uniquement."""
     with open(path, "a", newline="", encoding="utf-8") as f:
-        csv.writer(f).writerow([N, it, algo, _fmt(t), _fmt(sil), _fmt(k)])
+        csv.writer(f).writerow([N, it, algo, _fmt(t), _fmt(sil), _fmt(k), _fmt(t_mat)])
 
 
 # ===========================================================================
@@ -217,23 +260,16 @@ def _iteration_worker(args: tuple):
     """
     Worker indépendant : une itération complète pour une taille N donnée.
 
-    Reçoit : (N, it, seed, starts_all, ends_all) — tableaux numpy float32.
+    Reçoit : (N, it, seed, starts_all, ends_all, mode)
+             mode = "fast" | "ap" | "all"
     Retourne : (list[dict], list[str]) = (résultats, messages de log).
-
-    Pourquoi numpy arrays et non Segment objects ?
-    → pickle protocol 5 (buffer protocol) sérialise un array float32 N×2
-      en quelques millisecondes. Sérialiser N objets Python personnalisés
-      serait ~100× plus lent et doublerait la RAM pendant le transfert.
-
-    Pourquoi retourner des messages de log ?
-    → Sur Linux (fork), le worker hérite des handlers du parent. Si plusieurs
-      workers écrivent simultanément dans le fichier log, les lignes se
-      corrompent. Les messages sont donc retournés et écrits séquentiellement
-      par le main process (via as_completed).
     """
-    N, it, seed, starts_all, ends_all = args
+    N, it, seed, starts_all, ends_all, mode = args
     msgs    = []
     results = []
+
+    run_kmeans_kmedoids = mode in ("fast", "all")
+    run_ap              = mode in ("ap", "all")
 
     rng     = np.random.RandomState(seed)
     indices = rng.choice(len(starts_all), size=N, replace=False)
@@ -248,60 +284,62 @@ def _iteration_worker(args: tuple):
                 f"({D.nbytes / 1e6:.0f} MB)")
 
     # ── Features pour KMeans (espace euclidien) ────────────────────────────
-    mids     = (starts + ends) / 2.0
-    vectors  = ends - starts
-    lengths  = np.linalg.norm(vectors, axis=1, keepdims=True)
-    X_scaled = StandardScaler().fit_transform(
-        np.hstack([mids, vectors, lengths]).astype(np.float32)
-    )
+    if run_kmeans_kmedoids:
+        mids     = (starts + ends) / 2.0
+        vectors  = ends - starts
+        lengths  = np.linalg.norm(vectors, axis=1, keepdims=True)
+        X_scaled = StandardScaler().fit_transform(
+            np.hstack([mids, vectors, lengths]).astype(np.float32)
+        )
 
-    # ── ALGO 1 : KMeans ───────────────────────────────────────────────────
-    t0        = time.perf_counter()
-    km_labels = MiniBatchKMeans(
-        n_clusters=N_CLUSTERS_KMEANS, random_state=42,
-        batch_size=min(4096, N), n_init=5, verbose=0,
-    ).fit_predict(X_scaled)
-    t_km  = time.perf_counter() - t0
-    s_km  = _silhouette(D, km_labels)
-    msgs.append(f"  [N={N:>6} it={it}] KMeans    : {t_km:>7.3f}s  "
-                f"sil={s_km:+.4f}")
-    results.append(dict(N=N, it=it, algo="KMeans",
-                        t=t_km, sil=s_km, k=N_CLUSTERS_KMEANS))
+        # ── ALGO 1 : KMeans ──────────────────────────────────────────────
+        t0        = time.perf_counter()
+        km_labels = MiniBatchKMeans(
+            n_clusters=N_CLUSTERS_KMEANS, random_state=42,
+            batch_size=min(4096, N), n_init=5, verbose=0,
+        ).fit_predict(X_scaled)
+        t_km  = time.perf_counter() - t0
+        s_km  = _silhouette(D, km_labels)
+        msgs.append(f"  [N={N:>6} it={it}] KMeans    : {t_km:>7.3f}s  "
+                    f"sil={s_km:+.4f}")
+        results.append(dict(N=N, it=it, algo="KMeans",
+                            t=t_km, sil=s_km, k=N_CLUSTERS_KMEANS, t_mat=t_mat))
 
-    # ── ALGO 2 : CustomKMedoids (PAM) ────────────────────────────────────
-    t0   = time.perf_counter()
-    kmed = CustomKMedoids(n_clusters=N_CLUSTERS_KMEDOIDS,
-                          max_iter=300, random_state=42)
-    kmed.fit(D)
-    t_kmed = time.perf_counter() - t0
-    n_kmed = len(np.unique(kmed.labels_))
-    s_kmed = _silhouette(D, kmed.labels_)
-    msgs.append(f"  [N={N:>6} it={it}] KMedoids  : {t_kmed:>7.3f}s  "
-                f"sil={s_kmed:+.4f}  k={n_kmed}")
-    results.append(dict(N=N, it=it, algo="KMedoids",
-                        t=t_kmed, sil=s_kmed, k=n_kmed))
+        # ── ALGO 2 : CustomKMedoids (PAM) ────────────────────────────────
+        t0   = time.perf_counter()
+        kmed = CustomKMedoids(n_clusters=N_CLUSTERS_KMEDOIDS,
+                              max_iter=300, random_state=42)
+        kmed.fit(D)
+        t_kmed = time.perf_counter() - t0
+        n_kmed = len(np.unique(kmed.labels_))
+        s_kmed = _silhouette(D, kmed.labels_)
+        msgs.append(f"  [N={N:>6} it={it}] KMedoids  : {t_kmed:>7.3f}s  "
+                    f"sil={s_kmed:+.4f}  k={n_kmed}")
+        results.append(dict(N=N, it=it, algo="KMedoids",
+                            t=t_kmed, sil=s_kmed, k=n_kmed, t_mat=t_mat))
 
-    # ── ALGO 3 : CustomAffinityPropagation — SKIP si N > AP_MAX_N ────────
-    if N > AP_MAX_N:
-        msgs.append(f"  [N={N:>6} it={it}] AP        : AP ignoré pour N={N} "
-                    f"(Temps estimé trop long — seuil={AP_MAX_N})")
-        results.append(dict(N=N, it=it, algo="AffinityPropagation",
-                            t=float("nan"), sil=float("nan"), k=None))
-    else:
-        S = -(D.astype(np.float64))
-        np.fill_diagonal(S, np.median(S))
-        t0 = time.perf_counter()
-        ap = CustomAffinityPropagation(damping=0.9, max_iter=400,
-                                       convergence_iter=15, verbose=False)
-        ap.fit(S)
-        t_ap = time.perf_counter() - t0
-        n_ap = (len(ap.cluster_centers_indices_)
-                if ap.cluster_centers_indices_ is not None else 0)
-        s_ap = _silhouette(D, ap.labels_)
-        msgs.append(f"  [N={N:>6} it={it}] AP        : {t_ap:>7.3f}s  "
-                    f"sil={s_ap:+.4f}  k={n_ap}")
-        results.append(dict(N=N, it=it, algo="AffinityPropagation",
-                            t=t_ap, sil=s_ap, k=n_ap))
+    # ── ALGO 3 : CustomAffinityPropagation ────────────────────────────────
+    if run_ap:
+        if N > AP_MAX_N:
+            msgs.append(f"  [N={N:>6} it={it}] AP        : AP ignoré pour N={N} "
+                        f"(seuil={AP_MAX_N})")
+            results.append(dict(N=N, it=it, algo="AffinityPropagation",
+                                t=float("nan"), sil=float("nan"), k=None, t_mat=t_mat))
+        else:
+            S = -(D.astype(np.float64))
+            np.fill_diagonal(S, np.median(S))
+            t0 = time.perf_counter()
+            ap = CustomAffinityPropagation(damping=0.9, max_iter=400,
+                                           convergence_iter=15, verbose=False)
+            ap.fit(S)
+            t_ap = time.perf_counter() - t0
+            n_ap = (len(ap.cluster_centers_indices_)
+                    if ap.cluster_centers_indices_ is not None else 0)
+            s_ap = _silhouette(D, ap.labels_)
+            msgs.append(f"  [N={N:>6} it={it}] AP        : {t_ap:>7.3f}s  "
+                        f"sil={s_ap:+.4f}  k={n_ap}")
+            results.append(dict(N=N, it=it, algo="AffinityPropagation",
+                                t=t_ap, sil=s_ap, k=n_ap, t_mat=t_mat))
 
     return results, msgs
 
@@ -311,30 +349,8 @@ def _iteration_worker(args: tuple):
 # ===========================================================================
 
 def _max_workers(N: int) -> int:
-    """
-    Nombre max de workers parallèles selon N — adapté pour 32 Go RAM.
-
-    Chaque worker alloue ~3× la taille de la matrice D :
-      - D elle-même (float32, N×N)
-      - S = -D pour AP (float64, N×N)  — conservé même si AP est skippée
-      - Intermédiaires numpy (argmin, np.ix_, silhouette_score)
-
-    Seuils conservatifs pour 32 Go RAM (26 Go utilisables) :
-      N ≤ 2500   →  D ≈   25 MB × 3 × W → W=N_ITER workers  (~225 MB) ✓
-      N ≤ 5000   →  D ≈  100 MB × 3 × W → W=3 workers       (~900 MB) ✓
-      N ≤ 10000  →  D ≈  400 MB × 3 × W → W=2 workers       (~2.4 GB) ✓
-      N ≤ 20000  →  D ≈  1.6 GB × 3 × 1 → W=1 worker        (~4.8 GB) ✓
-      N > 20000  →  D ≈  3.6+ GB × 3 × 1→ W=1 worker        (~10+ GB) ⚠
-    """
-    n_cpu = os.cpu_count() or 1
-    if N <= 2500:
-        return min(N_ITERATIONS, n_cpu)
-    elif N <= 5000:
-        return min(N_ITERATIONS, n_cpu, 3)
-    elif N <= 10000:
-        return min(N_ITERATIONS, 2)
-    else:
-        return 1  # séquentiel — matrice N×N trop volumineuse pour paralléliser
+    """Nombre de workers parallèles — fixé à N_ITERATIONS (1 worker par itération)."""
+    return N_ITERATIONS
 
 
 # ===========================================================================
@@ -419,13 +435,11 @@ def estimate_runtime(starts_all: np.ndarray, ends_all: np.ndarray) -> float:
     for N in N_LIST:
         q2 = (N / N_CALIB) ** 2
         q1 =  N / N_CALIB
-        t_i = (
-            t_mat  * q2
-            + t_km   * q1                              # MiniBatch ~ linéaire
-            + t_kmed * q2
-            + (t_ap * q2 if N <= AP_MAX_N else 0.0)   # AP ou skippé
-            + 3 * t_sil * q2                           # silhouette × 3 algos
-        )
+        t_i = t_mat * q2  # matrice toujours calculée
+        if BENCH_MODE in ("fast", "all"):
+            t_i += t_km * q1 + t_kmed * q2 + 2 * t_sil * q2
+        if BENCH_MODE in ("ap", "all"):
+            t_i += (t_ap * q2 if N <= AP_MAX_N else 0.0) + t_sil * q2
         w       = _max_workers(N)
         t_bloc  = math.ceil(N_ITERATIONS / w) * t_i
         total_est += t_bloc
@@ -471,22 +485,31 @@ def run_benchmark(all_segments: list) -> None:
     estimate_runtime(starts_all, ends_all)
     init_csv(CSV_PATH)
 
-    total_runs    = len(N_LIST) * N_ITERATIONS * 3
+    # Nombre d'algos exécutés par itération selon le mode
+    n_algos = {"fast": 2, "ap": 1, "all": 3}[BENCH_MODE]
+    total_runs    = len(N_LIST) * N_ITERATIONS * n_algos
     done_runs     = 0
     t_bench_start = time.perf_counter()
 
+    # Algos actifs pour les fallback NaN
+    active_algos = []
+    if BENCH_MODE in ("fast", "all"):
+        active_algos += ["KMeans", "KMedoids"]
+    if BENCH_MODE in ("ap", "all"):
+        active_algos += ["AffinityPropagation"]
+
     for N in N_LIST:
         log.info("═" * 72)
-        log.info(f"  BLOC  N = {N:>6}   ({N_ITERATIONS} itérations × 3 algos)")
+        log.info(f"  BLOC  N = {N:>6}   ({N_ITERATIONS} itérations × {n_algos} algos)  mode={BENCH_MODE}")
         log.info("═" * 72)
 
         if N > len(all_segments):
             log.warning(f"  N={N} > corpus ({len(all_segments)}). SKIP → NaN.")
             for it in range(1, N_ITERATIONS + 1):
-                for algo in ["KMeans", "KMedoids", "AffinityPropagation"]:
+                for algo in active_algos:
                     append_row(CSV_PATH, N, it, algo,
-                               float("nan"), float("nan"), None)
-            done_runs += N_ITERATIONS * 3
+                               float("nan"), float("nan"), None, None)
+            done_runs += N_ITERATIONS * n_algos
             continue
 
         workers  = _max_workers(N)
@@ -498,7 +521,7 @@ def run_benchmark(all_segments: list) -> None:
                         f"de sécurité ({RAM_LIMIT_GB} Go). Risque d'OOM !")
 
         args_list = [
-            (N, it, N * 1000 + it, starts_all, ends_all)
+            (N, it, N * 1000 + it, starts_all, ends_all, BENCH_MODE)
             for it in range(1, N_ITERATIONS + 1)
         ]
         t_bloc_start = time.perf_counter()
@@ -518,14 +541,14 @@ def run_benchmark(all_segments: list) -> None:
                             log.info(msg)
                         for r in rows:
                             append_row(CSV_PATH, r["N"], r["it"], r["algo"],
-                                       r["t"], r["sil"], r["k"])
+                                       r["t"], r["sil"], r["k"], r.get("t_mat"))
                         done_runs += len(rows)
                     except Exception as exc:
                         log.error(f"  ✗ N={N} it={it} : {exc}")
-                        for algo in ["KMeans", "KMedoids", "AffinityPropagation"]:
+                        for algo in active_algos:
                             append_row(CSV_PATH, N, it, algo,
-                                       float("nan"), float("nan"), None)
-                        done_runs += 3
+                                       float("nan"), float("nan"), None, None)
+                        done_runs += n_algos
         else:
             # ── Exécution séquentielle pour les grands N ─────────────────
             for a in args_list:
@@ -535,15 +558,15 @@ def run_benchmark(all_segments: list) -> None:
                         log.info(msg)
                     for r in rows:
                         append_row(CSV_PATH, r["N"], r["it"], r["algo"],
-                                   r["t"], r["sil"], r["k"])
+                                   r["t"], r["sil"], r["k"], r.get("t_mat"))
                     done_runs += len(rows)
                 except Exception as exc:
                     it = a[1]
                     log.error(f"  ✗ N={N} it={it} : {exc}")
-                    for algo in ["KMeans", "KMedoids", "AffinityPropagation"]:
+                    for algo in active_algos:
                         append_row(CSV_PATH, N, it, algo,
-                                   float("nan"), float("nan"), None)
-                    done_runs += 3
+                                   float("nan"), float("nan"), None, None)
+                    done_runs += n_algos
 
         t_bloc   = time.perf_counter() - t_bloc_start
         elapsed  = time.perf_counter() - t_bench_start
@@ -572,14 +595,18 @@ def plot_heavy_benchmark(csv_path: Path) -> None:
 
     Graphique 2 — Qualité sémantique
         Axe X : N, Axe Y : Silhouette moyen
-        Prouve que KMedoids / AP offrent de meilleurs clusters TRACLUS que KMeans.
+
+    Graphique 3 — Temps matrice TRACLUS + nombre de clusters AP
     """
-    log.info("Génération du graphique double ...")
+    log.info("Génération des graphiques ...")
 
     df = pd.read_csv(csv_path)
-    df["Time_Seconds"]    = pd.to_numeric(df["Time_Seconds"],    errors="coerce")
-    df["Silhouette_Score"] = pd.to_numeric(df["Silhouette_Score"], errors="coerce")
-    df["N"]               = pd.to_numeric(df["N"],               errors="coerce")
+    df["Time_Seconds"]       = pd.to_numeric(df["Time_Seconds"],       errors="coerce")
+    df["Silhouette_Score"]   = pd.to_numeric(df["Silhouette_Score"],   errors="coerce")
+    df["N"]                  = pd.to_numeric(df["N"],                  errors="coerce")
+    df["N_Clusters_Found"]   = pd.to_numeric(df["N_Clusters_Found"],   errors="coerce")
+    if "Matrix_Time_Seconds" in df.columns:
+        df["Matrix_Time_Seconds"] = pd.to_numeric(df["Matrix_Time_Seconds"], errors="coerce")
 
     ALGOS   = ["KMeans", "KMedoids", "AffinityPropagation"]
     COLORS  = {"KMeans": "#1f77b4", "KMedoids": "#ff7f0e", "AffinityPropagation": "#2ca02c"}
@@ -587,10 +614,11 @@ def plot_heavy_benchmark(csv_path: Path) -> None:
     LABELS  = {
         "KMeans":              "KMeans (MiniBatch, euclidien)",
         "KMedoids":            "KMedoids (PAM custom, TRACLUS)",
-        "AffinityPropagation": f"AffinityPropagation (custom, TRACLUS) — skippé N>{AP_MAX_N}",
+        "AffinityPropagation": "AffinityPropagation (custom, TRACLUS)",
     }
 
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(18, 7))
+    fig, axes = plt.subplots(2, 2, figsize=(18, 14))
+    ax1, ax2, ax3, ax4 = axes[0, 0], axes[0, 1], axes[1, 0], axes[1, 1]
     fig.suptitle(
         "Benchmark de Scalabilité — Clustering Trajectoires Dota 2\n"
         "Métrique de distance : TRACLUS (perpendiculaire + parallèle + angulaire)",
@@ -630,12 +658,13 @@ def plot_heavy_benchmark(csv_path: Path) -> None:
             color=COLORS[algo], alpha=0.12,
         )
 
-    # Repère vertical AP_MAX_N
-    ax1.axvline(x=AP_MAX_N, color=COLORS["AffinityPropagation"],
-                linestyle=":", linewidth=1.5, alpha=0.7)
-    ax1.text(AP_MAX_N * 1.05, ax1.get_ylim()[0] * 2,
-             f"AP skippée\n(N > {AP_MAX_N})",
-             color=COLORS["AffinityPropagation"], fontsize=8, va="bottom")
+    # Repère vertical AP_MAX_N (seulement si AP est skippée dans certaines tailles)
+    if any(N > AP_MAX_N for N in N_LIST):
+        ax1.axvline(x=AP_MAX_N, color=COLORS["AffinityPropagation"],
+                    linestyle=":", linewidth=1.5, alpha=0.7)
+        ax1.text(AP_MAX_N * 1.05, ax1.get_ylim()[0] * 2,
+                 f"AP skippée\n(N > {AP_MAX_N})",
+                 color=COLORS["AffinityPropagation"], fontsize=8, va="bottom")
 
     ax1.legend(fontsize=9, loc="upper left")
 
@@ -648,8 +677,7 @@ def plot_heavy_benchmark(csv_path: Path) -> None:
         fontsize=12, fontweight="bold",
     )
     ax2.set_xlabel("N — nombre de segments", fontsize=11)
-    ax2.set_ylabel("Silhouette Score moyen  [-1 ; 1]", fontsize=11)
-    ax2.set_ylim(-1.05, 1.05)
+    ax2.set_ylabel("Silhouette Score moyen", fontsize=11)
     ax2.grid(True, linestyle="--", alpha=0.4)
     ax2.axhline(0, color="black", linewidth=0.8, linestyle=":", alpha=0.6)
 
@@ -687,6 +715,63 @@ def plot_heavy_benchmark(csv_path: Path) -> None:
     )
 
     # -----------------------------------------------------------------------
+    # Graphique 3 : Temps matrice TRACLUS O(N²)
+    # -----------------------------------------------------------------------
+    ax3.set_title("Temps de calcul matrice TRACLUS (O(N²))", fontsize=12, fontweight="bold")
+    ax3.set_xlabel("N — nombre de segments", fontsize=11)
+    ax3.set_ylabel("Temps moyen (secondes)", fontsize=11)
+    ax3.set_xscale("log")
+    ax3.set_yscale("log")
+    ax3.grid(True, which="both", linestyle="--", alpha=0.4)
+
+    if "Matrix_Time_Seconds" in df.columns:
+        mat_df = df.dropna(subset=["Matrix_Time_Seconds"])
+        if not mat_df.empty:
+            mat_stats = (mat_df.groupby("N")["Matrix_Time_Seconds"]
+                          .agg(mean="mean", std="std")
+                          .reset_index()
+                          .drop_duplicates(subset=["N"]))
+            mat_stats["std"] = mat_stats["std"].fillna(0.0)
+            ax3.plot(mat_stats["N"], mat_stats["mean"],
+                     color="#d62728", marker="D", linewidth=2.2, markersize=8,
+                     label="Matrice TRACLUS (N×N)")
+            ax3.fill_between(mat_stats["N"],
+                             (mat_stats["mean"] - mat_stats["std"]).clip(lower=1e-5),
+                             mat_stats["mean"] + mat_stats["std"],
+                             color="#d62728", alpha=0.12)
+            ax3.legend(fontsize=9)
+    else:
+        ax3.text(0.5, 0.5, "Données Matrix_Time non disponibles",
+                 transform=ax3.transAxes, ha="center", fontsize=10, color="gray")
+
+    # -----------------------------------------------------------------------
+    # Graphique 4 : Nombre de clusters trouvés
+    # -----------------------------------------------------------------------
+    ax4.set_title("Nombre de clusters trouvés par algorithme", fontsize=12, fontweight="bold")
+    ax4.set_xlabel("N — nombre de segments", fontsize=11)
+    ax4.set_ylabel("Nombre de clusters", fontsize=11)
+    ax4.grid(True, linestyle="--", alpha=0.4)
+
+    for algo in ALGOS:
+        sub = df[df["Algorithm"] == algo].copy()
+        sub = sub.dropna(subset=["N_Clusters_Found"])
+        if sub.empty:
+            continue
+        stats = (sub.groupby("N")["N_Clusters_Found"]
+                   .agg(mean="mean", std="std")
+                   .reset_index())
+        stats["std"] = stats["std"].fillna(0.0)
+        ax4.plot(stats["N"], stats["mean"],
+                 color=COLORS[algo], marker=MARKERS[algo],
+                 linewidth=2.2, markersize=8, label=LABELS[algo])
+        ax4.fill_between(stats["N"],
+                         (stats["mean"] - stats["std"]).clip(lower=0),
+                         stats["mean"] + stats["std"],
+                         color=COLORS[algo], alpha=0.12)
+
+    ax4.legend(fontsize=9, loc="best")
+
+    # -----------------------------------------------------------------------
     # Export
     # -----------------------------------------------------------------------
     plt.tight_layout()
@@ -700,6 +785,17 @@ def plot_heavy_benchmark(csv_path: Path) -> None:
 # ===========================================================================
 
 def main() -> None:
+    parser = argparse.ArgumentParser(
+        description="Benchmark scalabilité clustering Dota 2")
+    parser.add_argument(
+        "--mode", choices=["fast", "ap", "all"], default="all",
+        help="fast = KMeans+KMedoids seulement (N élevé), "
+             "ap = Propagation d'affinité seule (N modéré), "
+             "all = les 3 ensemble (ancien comportement)")
+    args = parser.parse_args()
+
+    _configure_mode(args.mode)
+
     # Logging configuré ici (et non au niveau module) pour éviter les
     # double-handlers quand les workers réimportent ce module (spawn).
     logging.basicConfig(
@@ -712,15 +808,22 @@ def main() -> None:
         ],
     )
 
+    mode_desc = {
+        "fast": "KMeans + KMedoids (sans AP)",
+        "ap":   "Propagation d'affinité seule",
+        "all":  "KMeans + KMedoids + AP",
+    }
+
     n_cpu = os.cpu_count() or 1
     log.info("╔" + "═" * 70 + "╗")
-    log.info("║  STRESS TEST — Benchmark Scalabilité Clustering Dota 2  v2 Parallèle  ║")
+    log.info("║  STRESS TEST — Benchmark Scalabilité Clustering Dota 2            ║")
     log.info("╠" + "═" * 70 + "╣")
+    log.info(f"║  Mode                  : {args.mode}  ({mode_desc[args.mode]})")
     log.info(f"║  Tailles N testées     : {N_LIST}")
     log.info(f"║  Itérations / taille   : {N_ITERATIONS}")
     log.info(f"║  k (KMeans / KMedoids) : {N_CLUSTERS_KMEANS}")
-    log.info(f"║  AP skippée pour N >   : {AP_MAX_N}")
-    log.info(f"║  CPUs disponibles      : {n_cpu}  (parallélisme adaptatif par N)")
+    log.info(f"║  AP max N              : {AP_MAX_N}")
+    log.info(f"║  CPUs disponibles      : {n_cpu}  ({N_ITERATIONS} workers = 1 par itération)")
     log.info(f"║  CSV                   : {CSV_PATH}")
     log.info(f"║  Log                   : {LOG_PATH}")
     log.info(f"║  Graphique             : {PLOT_PATH}")

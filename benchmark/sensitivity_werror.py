@@ -39,17 +39,17 @@ Usage :
 
 import argparse
 import contextlib
+import csv
 import gc
 import io
+import platform
 import sys
 import time
 from multiprocessing import Manager, Pool
 from pathlib import Path
 
-import matplotlib.pyplot as plt
 import numpy as np
 import pandas as pd
-from scipy.signal import savgol_filter
 
 # ── Chemin projet ────────────────────────────────────────────────────────────
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -82,24 +82,13 @@ DEFAULT_K = 12                     # K fixe pour KMeans / KMedoids
 DEFAULT_MIN_LENGTH = 5.0
 SILHOUETTE_SAMPLE = 5000           # Échantillon pour silhouette (perf)
 MAX_SEGMENTS_TRACLUS = 5000        # Limite N×N pour KMedoids / AP
-DEFAULT_N_WORKERS = 10
+DEFAULT_N_WORKERS = 4
 
 # ── Mode --quick (léger, séquentiel, RAM safe) ──────────────────────────────
 QUICK_MAX_FILES = 10
 QUICK_N_SEEDS = 3
 QUICK_MAX_SEGMENTS = 2000          # Matrice 2000² ≈ 15 Mo au lieu de 100 Mo
 QUICK_SILHOUETTE_SAMPLE = 2000
-
-ALGO_LABELS = {
-    "kmeans":   "KMeans",
-    "kmedoids": "K-Médoïdes",
-    "ap":       "Affinity Propagation",
-}
-ALGO_COLORS = {
-    "kmeans":   "#2196F3",
-    "kmedoids": "#FF9800",
-    "ap":       "#4CAF50",
-}
 
 DEFAULT_MAX_RAM_GB = 26            # Limite RAM (Go) pour auto-calcul workers
 
@@ -120,24 +109,43 @@ def _init_worker(trajs, n_pts):
     _SHARED_N_POINTS = n_pts
 
 
-def _estimate_worker_peak_gb(max_seg: int) -> float:
+def _estimate_worker_peak_gb(max_seg: int, n_traj_bytes: int = 0) -> float:
     """Estime la mémoire pic (Go) d'un worker pendant Affinity Propagation.
 
     AP est le plus gourmand : sim_matrix + S_copy + R + A + ~4 temporaires.
+    compute_traclus_similarity alloue ~10 matrices float32 en interne,
+    et le résultat est promu float64 (numpy broadcast).
+
+    Sur Windows (spawn), chaque worker reçoit une copie pickle des
+    trajectoires → n_traj_bytes supplémentaires par worker.
     """
-    matrix_bytes = max_seg * max_seg * 8  # float64
-    # sim_matrix (worker) + S copy + R + A + ~4 temporaires AP
-    n_matrices = 8
-    worker_arrays = n_matrices * matrix_bytes
-    overhead = 250 * 1024 * 1024  # 250 Mo pour Python, segments, features…
-    return (worker_arrays + overhead) / (1024 ** 3)
+    matrix_f64 = max_seg * max_seg * 8   # float64, 1 matrice
+    matrix_f32 = max_seg * max_seg * 4   # float32, 1 matrice
+    # AP : S_copy + R + A + AS + max_AS + R_new + Rp + A_new ≈ 9 float64
+    ap_arrays = 9 * matrix_f64
+    # compute_traclus_similarity : ~6 float32 intermédiaires + 1 float64 sortie
+    sim_arrays = 6 * matrix_f32 + matrix_f64
+    # pic = max(AP, similarity)  — ils ne tournent pas en même temps,
+    # mais sim_matrix reste en mémoire pendant AP
+    peak_arrays = ap_arrays + matrix_f64   # AP + sim_matrix retenue
+    overhead = 350 * 1024 * 1024  # Python runtime, segments, features…
+    # Sur Windows (spawn), ajouter la copie des trajectoires
+    return (peak_arrays + overhead + n_traj_bytes) / (1024 ** 3)
 
 
-def _compute_safe_workers(max_seg: int, max_ram_gb: float) -> int:
+def _estimate_traj_bytes(trajectories) -> int:
+    """Estime la taille mémoire des trajectoires (pour Windows spawn)."""
+    n_points = sum(len(t.points) for t in trajectories)
+    # TrajectoryPoint : 3 floats + overhead objet Python ≈ 128 octets
+    return n_points * 128
+
+
+def _compute_safe_workers(max_seg: int, max_ram_gb: float,
+                          n_traj_bytes: int = 0) -> int:
     """Calcule le nombre max de workers parallèles qui tiennent en RAM."""
-    os_reserved = 3.0        # Go réservés à l'OS + processus parent
+    os_reserved = 4.0        # Go réservés à l'OS + processus parent
     available = max_ram_gb - os_reserved
-    per_worker = _estimate_worker_peak_gb(max_seg)
+    per_worker = _estimate_worker_peak_gb(max_seg, n_traj_bytes)
     safe = max(1, int(available / per_worker))
     return safe
 
@@ -344,7 +352,7 @@ def _worker_single_werror(args_tuple):
         with lock:
             counter.value += 1
             print(f"  [{counter.value:3d}/{total}] w={w_error:7.2f}  →  "
-                  f"{n_seg_total:5d} seg   SKIP (< 20)")
+                  f"{n_seg_total:5d} seg   SKIP (< 20)", flush=True)
         return [_empty_row(w_error, n_raw, n_seg_total, n_seg_total,
                            comp_rate, t_compress, algo)
                 for algo in ("kmeans", "kmedoids", "ap")]
@@ -435,7 +443,7 @@ def _worker_single_werror(args_tuple):
     with lock:
         counter.value += 1
         print(f"  [{counter.value:3d}/{total}] w={w_error:7.2f}  →  {n_seg:5d} seg | "
-              f"{summary} | {elapsed:5.1f}s")
+              f"{summary} | {elapsed:5.1f}s", flush=True)
 
     return rows
 
@@ -470,18 +478,49 @@ def _make_row(w_error, n_raw, n_seg_total, n_seg, comp_rate,
 # BOUCLE PRINCIPALE (SÉQUENTIELLE ou PARALLÈLE)
 # ═════════════════════════════════════════════════════════════════════════════
 
+# Colonnes du CSV (ordre garanti)
+_CSV_COLUMNS = [
+    "w_error", "algorithm", "n_segments_raw", "n_segments_total",
+    "n_segments", "compression_rate", "mean_length", "std_length",
+    "median_length", "n_clusters", "k_found", "seed",
+    "silhouette", "davies_bouldin", "calinski_harabasz", "inertia",
+    "t_compress", "t_cluster",
+]
+
+
+def _init_csv(csv_path: Path) -> None:
+    """Écrit l'en-tête CSV (écrase le fichier existant)."""
+    csv_path.parent.mkdir(parents=True, exist_ok=True)
+    with open(csv_path, "w", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=_CSV_COLUMNS)
+        writer.writeheader()
+
+
+def _append_csv(csv_path: Path, rows: list[dict]) -> None:
+    """Ajoute des lignes au CSV (mode append)."""
+    if not rows:
+        return
+    with open(csv_path, "a", newline="", encoding="utf-8") as f:
+        writer = csv.DictWriter(f, fieldnames=_CSV_COLUMNS)
+        writer.writerows(rows)
+
+
 def run_benchmark(trajectories, n_original_points, w_errors,
                   k, n_seeds, min_length, *,
                   n_workers=DEFAULT_N_WORKERS,
                   max_seg=MAX_SEGMENTS_TRACLUS,
                   sil_sample=SILHOUETTE_SAMPLE,
-                  max_ram_gb=DEFAULT_MAX_RAM_GB):
+                  max_ram_gb=DEFAULT_MAX_RAM_GB,
+                  csv_path: Path | None = None):
     """Exécute le benchmark et retourne un DataFrame.
 
     n_workers=1 → mode séquentiel (pas de fork, RAM safe).
     n_workers>1 → mode parallèle (multiprocessing.Pool).
     Le nombre de workers est automatiquement réduit si la RAM estimée
     dépasse max_ram_gb.
+
+    Si csv_path est fourni, les résultats sont écrits de manière
+    incrémentale (append après chaque w_error terminé).
     """
     total = len(w_errors)
     runs_per_w = 2 * n_seeds + 1   # KMeans×seeds + KMedoids×seeds + AP×1
@@ -489,26 +528,36 @@ def run_benchmark(trajectories, n_original_points, w_errors,
     n_workers = min(n_workers, total)
 
     # ── Estimation mémoire & auto-limitation ─────────────────────────────
-    per_worker_gb = _estimate_worker_peak_gb(max_seg)
-    safe_workers = _compute_safe_workers(max_seg, max_ram_gb)
+    n_traj_bytes = (_estimate_traj_bytes(trajectories)
+                    if platform.system() == "Windows" else 0)
+    per_worker_gb = _estimate_worker_peak_gb(max_seg, n_traj_bytes)
+    safe_workers = _compute_safe_workers(max_seg, max_ram_gb, n_traj_bytes)
 
     if n_workers > 1 and n_workers > safe_workers:
         print(f"⚠️  {n_workers} workers × {per_worker_gb:.1f} Go/worker "
-              f"= {n_workers * per_worker_gb:.0f} Go pic > limite {max_ram_gb} Go")
+              f"= {n_workers * per_worker_gb:.0f} Go pic > limite {max_ram_gb} Go",
+              flush=True)
         n_workers = safe_workers
-        print(f"    → Réduit automatiquement à {n_workers} workers")
+        print(f"    → Réduit automatiquement à {n_workers} workers", flush=True)
 
     estimated_total = n_workers * per_worker_gb + 3.0  # +3 Go OS/parent
     mode = "séquentiel" if n_workers <= 1 else f"{n_workers} processus parallèles"
 
     print(f"Benchmark : {total} w_error × (KMeans + KMedoids) × {n_seeds} graines + AP"
-          f" = {total_runs} runs")
-    print(f"K fixe    : {k}  |  Sous-éch. TRACLUS : {max_seg}  |  Sil. sample : {sil_sample}")
-    print(f"Mode      : {mode}")
+          f" = {total_runs} runs", flush=True)
+    print(f"K fixe    : {k}  |  Sous-éch. TRACLUS : {max_seg}  |  Sil. sample : {sil_sample}",
+          flush=True)
+    print(f"Mode      : {mode}", flush=True)
     print(f"RAM estimée : {per_worker_gb:.1f} Go/worker × {n_workers} "
-          f"+ 3 Go OS ≈ {estimated_total:.0f} Go  (limite : {max_ram_gb} Go)")
-    print("=" * 78)
-    sys.stdout.flush()
+          f"+ 3 Go OS ≈ {estimated_total:.0f} Go  (limite : {max_ram_gb} Go)",
+          flush=True)
+    if csv_path:
+        print(f"CSV incrémental : {csv_path}", flush=True)
+    print("=" * 78, flush=True)
+
+    # ── Initialiser le CSV incrémental ────────────────────────────────────
+    if csv_path:
+        _init_csv(csv_path)
 
     t_global = time.perf_counter()
 
@@ -517,26 +566,28 @@ def run_benchmark(trajectories, n_original_points, w_errors,
         rows = _run_sequential(
             trajectories, n_original_points, w_errors,
             k, n_seeds, min_length, max_seg, sil_sample, t_global,
+            csv_path=csv_path,
         )
     else:
         # ── Mode parallèle ────────────────────────────────────────────────
         rows = _run_parallel(
             trajectories, n_original_points, w_errors,
             k, n_seeds, min_length, max_seg, sil_sample, n_workers,
-            max_ram_gb,
+            max_ram_gb, csv_path=csv_path,
         )
 
     total_time = time.perf_counter() - t_global
-    print("=" * 78)
-    print(f"Terminé en {total_time:.0f}s ({total_time / 60:.1f} min)\n")
-    sys.stdout.flush()
+    print("=" * 78, flush=True)
+    print(f"Terminé en {total_time:.0f}s ({total_time / 60:.1f} min)\n",
+          flush=True)
 
     return pd.DataFrame(rows)
 
 
 def _run_sequential(trajectories, n_original_points, w_errors,
-                    k, n_seeds, min_length, max_seg, sil_sample, t_global):
-    """Boucle séquentielle avec progression temps réel."""
+                    k, n_seeds, min_length, max_seg, sil_sample, t_global,
+                    *, csv_path=None):
+    """Boucle séquentielle avec progression temps réel + écriture incrémentale."""
     total = len(w_errors)
     all_rows: list[dict] = []
 
@@ -561,9 +612,12 @@ def _run_sequential(trajectories, n_original_points, w_errors,
         batch = _worker_single_werror(task)
         all_rows.extend(batch)
 
+        # ── Écriture incrémentale ─────────────────────────────────────────
+        if csv_path:
+            _append_csv(csv_path, batch)
+
         # ETA
         eta = _eta(t_global, idx + 1, total)
-        # Efface la ligne "en cours" (le worker a déjà imprimé sa ligne)
         print(f"  {eta}", flush=True)
 
     return all_rows
@@ -571,11 +625,11 @@ def _run_sequential(trajectories, n_original_points, w_errors,
 
 def _run_parallel(trajectories, n_original_points, w_errors,
                   k, n_seeds, min_length, max_seg, sil_sample, n_workers,
-                  max_ram_gb=DEFAULT_MAX_RAM_GB):
-    """Boucle parallèle (multiprocessing.Pool).
+                  max_ram_gb=DEFAULT_MAX_RAM_GB, *, csv_path=None):
+    """Boucle parallèle (multiprocessing.Pool) avec écriture incrémentale.
 
-    Les trajectoires sont partagées via _init_worker (COW sous Linux)
-    au lieu d'être picklées dans chaque tâche → économie massive de RAM.
+    Utilise imap_unordered pour recevoir les résultats au fil de l'eau
+    et les écrire immédiatement dans le CSV.
     """
     total = len(w_errors)
     manager = Manager()
@@ -590,16 +644,17 @@ def _run_parallel(trajectories, n_original_points, w_errors,
         for w in w_errors
     ]
 
+    rows: list[dict] = []
     with Pool(
         processes=n_workers,
         initializer=_init_worker,
         initargs=(trajectories, n_original_points),
     ) as pool:
-        results = pool.map(_worker_single_werror, tasks)
+        for batch in pool.imap_unordered(_worker_single_werror, tasks):
+            rows.extend(batch)
+            if csv_path:
+                _append_csv(csv_path, batch)
 
-    rows: list[dict] = []
-    for batch in results:
-        rows.extend(batch)
     return rows
 
 
@@ -626,366 +681,6 @@ def _eta(t_start, done, total):
     if remaining > 120:
         return f"ETA {remaining / 60:.0f} min"
     return f"ETA {remaining:.0f}s"
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# LISSAGE (Savitzky-Golay)
-# ═════════════════════════════════════════════════════════════════════════════
-
-def _smooth(y, window=11, polyorder=3):
-    """Lissage Savitzky-Golay robuste (gère les petits tableaux)."""
-    n = len(y)
-    if n < 5:
-        return y.copy()
-    w = min(window, n if n % 2 == 1 else n - 1)
-    p = min(polyorder, w - 1)
-    return savgol_filter(y, window_length=w, polyorder=p)
-
-
-def _minmax(arr, invert=False):
-    """Normalisation min-max → [0, 1].  Si invert=True, 1 = min original."""
-    mn, mx = np.nanmin(arr), np.nanmax(arr)
-    if mx - mn < 1e-10:
-        return np.full_like(arr, 0.5)
-    normed = (arr - mn) / (mx - mn)
-    return 1.0 - normed if invert else normed
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# FIGURE 1 — Vue d'ensemble (2 × 3) — KMeans
-# ═════════════════════════════════════════════════════════════════════════════
-
-def plot_pipeline_impact(df, output_dir):
-    """Silhouette / DB / CH + n_seg / longueur / temps  (KMeans uniquement)."""
-    sub = df[(df["algorithm"] == "kmeans") & df["silhouette"].notna()]
-    if sub.empty:
-        print("  ⚠️  Pas de données KMeans pour la figure 1")
-        return
-
-    agg = sub.groupby("w_error").agg(
-        sil_mean=("silhouette", "mean"),   sil_std=("silhouette", "std"),
-        db_mean=("davies_bouldin", "mean"),  db_std=("davies_bouldin", "std"),
-        ch_mean=("calinski_harabasz", "mean"), ch_std=("calinski_harabasz", "std"),
-        n_seg=("n_segments", "first"),
-        mean_len=("mean_length", "first"),
-        t_compress=("t_compress", "first"),
-    ).reset_index()
-
-    x = agg["w_error"].values
-    n_seeds = max(sub.groupby("w_error").size().min(), 1)
-    ci = 1.96 / np.sqrt(n_seeds)      # facteur IC 95 %
-
-    fig, axes = plt.subplots(2, 3, figsize=(18, 10))
-    fig.suptitle(
-        f"Impact de w_error sur le Pipeline  (KMeans, K = {DEFAULT_K})",
-        fontsize=16, fontweight="bold", y=0.98,
-    )
-
-    # --- Silhouette ---
-    _panel(axes[0, 0], x, agg["sil_mean"], agg["sil_std"] * ci,
-           "#2196F3", "#0D47A1", "Silhouette Score", "↑", peak=True)
-
-    # --- Davies-Bouldin ---
-    _panel(axes[0, 1], x, agg["db_mean"], agg["db_std"] * ci,
-           "#FF9800", "#E65100", "Davies-Bouldin Index", "↓")
-
-    # --- Calinski-Harabasz ---
-    _panel(axes[0, 2], x, agg["ch_mean"], agg["ch_std"] * ci,
-           "#4CAF50", "#1B5E20", "Calinski-Harabasz Index", "↑")
-
-    # --- Nombre de segments ---
-    ax = axes[1, 0]
-    ax.plot(x, agg["n_seg"], "o-", color="#9C27B0", ms=3, lw=1)
-    ax.set(xscale="log", yscale="log", xlabel="w_error",
-           ylabel="Segments (après filtrage)", title="Nombre de segments")
-    ax.grid(True, alpha=0.3)
-
-    # --- Longueur moyenne ---
-    ax = axes[1, 1]
-    ax.plot(x, agg["mean_len"], "o-", color="#F44336", ms=3, lw=1)
-    ax.set(xscale="log", xlabel="w_error", ylabel="Longueur moyenne",
-           title="Longueur moyenne des segments")
-    ax.grid(True, alpha=0.3)
-
-    # --- Temps de compression ---
-    ax = axes[1, 2]
-    ax.plot(x, agg["t_compress"], "o-", color="#607D8B", ms=3, lw=1)
-    ax.set(xscale="log", xlabel="w_error", ylabel="Temps (s)",
-           title="Temps de compression")
-    ax.grid(True, alpha=0.3)
-
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
-    path = output_dir / "fig1_pipeline_impact.png"
-    fig.savefig(path, dpi=200, bbox_inches="tight")
-    plt.close()
-    print(f"  ✅ {path}")
-
-
-def _panel(ax, x, y_mean, y_err, c1, c2, title, direction, peak=False):
-    """Dessine un sous-graphe métrique (points + IC + tendance)."""
-    y = y_mean.values
-    err = y_err.fillna(0).values if hasattr(y_err, "fillna") else np.nan_to_num(y_err)
-
-    ax.plot(x, y, "o", color=c1, ms=3, alpha=0.5)
-    ax.fill_between(x, y - err, y + err, alpha=0.15, color=c1)
-
-    y_s = _smooth(y)
-    ax.plot(x, y_s, "-", color=c2, lw=2.5, label="Tendance (Savitzky-Golay)")
-
-    if peak:
-        best = int(np.argmax(y_s))
-        ax.axvline(x[best], color="red", ls=":", alpha=0.7,
-                   label=f"Pic ≈ {x[best]:.1f}")
-
-    ax.set(xscale="log", xlabel="w_error", ylabel=f"{title} {direction}",
-           title=title)
-    ax.legend(fontsize=8)
-    ax.grid(True, alpha=0.3)
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# FIGURE 2 — Sweet Spot (Silhouette + Compression + Consensus)
-# ═════════════════════════════════════════════════════════════════════════════
-
-def plot_sweet_spot(df, output_dir):
-    """Dual-axis : Silhouette vs Compression Rate + score consensus normalisé.
-
-    Le consensus est calculé sur la moyenne des 3 algorithmes.
-    """
-    valid = df[df["silhouette"].notna()]
-    if valid.empty:
-        print("  ⚠️  Pas de données pour la figure 2")
-        return
-
-    agg = valid.groupby("w_error").agg(
-        sil_mean=("silhouette", "mean"),
-        db_mean=("davies_bouldin", "mean"),
-        ch_mean=("calinski_harabasz", "mean"),
-        comp_rate=("compression_rate", "first"),
-    ).reset_index()
-
-    x = agg["w_error"].values
-
-    # ── Score consensus (3 métriques normalisées [0, 1]) ─────────────────
-    sil_n = _minmax(agg["sil_mean"].values)
-    db_n  = _minmax(agg["db_mean"].values, invert=True)   # ↓ = mieux
-    ch_n  = _minmax(agg["ch_mean"].values)
-    consensus = (sil_n + db_n + ch_n) / 3.0
-    consensus_s = _smooth(consensus)
-
-    sil_s = _smooth(agg["sil_mean"].values)
-    comp_pct = agg["comp_rate"].values * 100
-
-    fig, ax1 = plt.subplots(figsize=(14, 7))
-
-    # ── Silhouette (axe gauche) ──────────────────────────────────────────
-    c_sil = "#2196F3"
-    ax1.plot(x, agg["sil_mean"].values, "o", color=c_sil, ms=3, alpha=0.35)
-    ax1.plot(x, sil_s, "-", color=c_sil, lw=2.5, label="Silhouette (lissé)")
-    ax1.set_xlabel("w_error", fontsize=13)
-    ax1.set_ylabel("Silhouette Score ↑", fontsize=13, color=c_sil)
-    ax1.tick_params(axis="y", labelcolor=c_sil)
-    ax1.set_xscale("log")
-
-    # ── Taux de compression (axe droit) ──────────────────────────────────
-    ax2 = ax1.twinx()
-    c_comp = "#F44336"
-    ax2.plot(x, comp_pct, "s-", color=c_comp, ms=3, lw=1.5, alpha=0.7,
-             label="Taux de compression (%)")
-    ax2.set_ylabel("Taux de compression (%) ↑", fontsize=13, color=c_comp)
-    ax2.tick_params(axis="y", labelcolor=c_comp)
-
-    # ── Consensus (sur l'axe gauche, redimensionné) ──────────────────────
-    c_cons = "#4CAF50"
-    scale = np.nanmax(sil_s) if np.any(np.isfinite(sil_s)) else 1.0
-    ax1.plot(x, consensus_s * scale, "--", color=c_cons, lw=2.5, alpha=0.8,
-             label="Score consensus (normalisé)")
-
-    # ── Sweet spot : pic du consensus lissé ──────────────────────────────
-    best_idx = int(np.argmax(consensus_s))
-    best_w = x[best_idx]
-    ax1.axvline(best_w, color="#E91E63", ls=":", lw=2,
-                label=f"Sweet spot ≈ {best_w:.1f}")
-
-    # Zone optimale (≥ 95 % du pic consensus)
-    threshold = consensus_s[best_idx] * 0.95
-    zone_mask = consensus_s >= threshold
-    zone_x = x[zone_mask]
-    if len(zone_x) >= 2:
-        ax1.axvspan(zone_x[0], zone_x[-1], alpha=0.08, color="#E91E63",
-                    label=f"Zone optimale [{zone_x[0]:.1f} – {zone_x[-1]:.1f}]")
-
-    # ── Légendes combinées ───────────────────────────────────────────────
-    h1, l1 = ax1.get_legend_handles_labels()
-    h2, l2 = ax2.get_legend_handles_labels()
-    ax1.legend(h1 + h2, l1 + l2, loc="center left", fontsize=10, framealpha=0.95)
-
-    ax1.set_title(
-        "Sweet Spot : Compromis Compression / Qualité  (3 algos combinés)",
-        fontsize=15, fontweight="bold", pad=15,
-    )
-    ax1.grid(True, alpha=0.3)
-
-    plt.tight_layout()
-    path = output_dir / "fig2_sweet_spot.png"
-    fig.savefig(path, dpi=200, bbox_inches="tight")
-    plt.close()
-    print(f"  ✅ {path}")
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# FIGURE 3 — Comparaison des 3 algorithmes
-# ═════════════════════════════════════════════════════════════════════════════
-
-def plot_comparison_algo(df, output_dir):
-    """Silhouette / DB / CH vs w_error pour chaque algorithme."""
-    valid = df[df["silhouette"].notna()]
-    algos = [a for a in ("kmeans", "kmedoids", "ap")
-             if a in valid["algorithm"].unique()]
-
-    if not algos:
-        print("  ⚠️  Pas assez de données pour la figure 3")
-        return
-
-    metrics_info = [
-        ("silhouette",        "Silhouette Score",        "↑"),
-        ("davies_bouldin",    "Davies-Bouldin Index",    "↓"),
-        ("calinski_harabasz", "Calinski-Harabasz Index",  "↑"),
-    ]
-
-    fig, axes = plt.subplots(1, 3, figsize=(20, 7))
-    fig.suptitle(
-        "Comparaison KMeans / K-Médoïdes / Affinity Propagation",
-        fontsize=16, fontweight="bold", y=0.98,
-    )
-
-    for ax, (col, title, direction) in zip(axes, metrics_info):
-        for algo in algos:
-            sub = valid[valid["algorithm"] == algo]
-            agg = sub.groupby("w_error").agg(
-                y_mean=(col, "mean"),
-                y_std=(col, "std"),
-            ).reset_index()
-
-            x = agg["w_error"].values
-            y = agg["y_mean"].values
-            y_s = _smooth(y)
-            color = ALGO_COLORS[algo]
-            label = ALGO_LABELS[algo]
-
-            ax.plot(x, y_s, "-", color=color, lw=2.5, label=label)
-            ax.fill_between(
-                x,
-                y - agg["y_std"].fillna(0).values,
-                y + agg["y_std"].fillna(0).values,
-                alpha=0.1, color=color,
-            )
-
-        ax.set(xscale="log", xlabel="w_error", ylabel=f"{title} {direction}")
-        ax.set_title(title, fontsize=13)
-        ax.legend(fontsize=10, framealpha=0.95)
-        ax.grid(True, alpha=0.3)
-
-    plt.tight_layout(rect=[0, 0, 1, 0.95])
-    path = output_dir / "fig3_comparison_algo.png"
-    fig.savefig(path, dpi=200, bbox_inches="tight")
-    plt.close()
-    print(f"  ✅ {path}")
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# FIGURE 4 — Distribution des longueurs de segments (boxplots)
-# ═════════════════════════════════════════════════════════════════════════════
-
-def plot_segment_distributions(trajectories, output_dir, min_length,
-                               w_samples=None):
-    """Boxplots de longueur de segments pour quelques w_error clés."""
-    if w_samples is None:
-        w_samples = [0.5, 2.0, 5.0, 12.0, 25.0, 50.0, 100.0]
-
-    all_lengths: dict[float, list[float]] = {}
-
-    for w in w_samples:
-        segs, _ = compress_all(trajectories, w, min_length)
-        if segs:
-            all_lengths[w] = [s.length() for s in segs]
-
-    if not all_lengths:
-        return
-
-    fig, ax = plt.subplots(figsize=(14, 6))
-    labels = [f"{w}" for w in all_lengths]
-    data = [all_lengths[w] for w in all_lengths]
-
-    bp = ax.boxplot(data, tick_labels=labels, patch_artist=True, showfliers=False)
-
-    colors = plt.cm.coolwarm(np.linspace(0.15, 0.85, len(data)))
-    for patch, color in zip(bp["boxes"], colors):
-        patch.set_facecolor(color)
-        patch.set_alpha(0.7)
-
-    ax.set_xlabel("w_error", fontsize=13)
-    ax.set_ylabel("Longueur des segments", fontsize=13)
-    ax.set_title("Distribution des longueurs de segments selon w_error",
-                 fontsize=15, fontweight="bold")
-    ax.grid(True, axis="y", alpha=0.3)
-
-    # Annotations : nombre de segments au-dessus de chaque boxplot
-    for i, (w, lengths) in enumerate(all_lengths.items()):
-        ax.text(i + 1, ax.get_ylim()[1] * 0.98, f"n={len(lengths):,}",
-                ha="center", va="top", fontsize=8, color="gray")
-
-    plt.tight_layout()
-    path = output_dir / "fig4_segment_distributions.png"
-    fig.savefig(path, dpi=200, bbox_inches="tight")
-    plt.close()
-    print(f"  ✅ {path}")
-
-
-# ═════════════════════════════════════════════════════════════════════════════
-# RÉSUMÉ STATISTIQUE
-# ═════════════════════════════════════════════════════════════════════════════
-
-def print_summary(df):
-    """Affiche le tableau récapitulatif."""
-    valid = df[df["silhouette"].notna()]
-    if valid.empty:
-        print("Aucune donnée valide.")
-        return
-
-    # ── Par algorithme ────────────────────────────────────────────────────
-    print("\n" + "=" * 64)
-    print("  RÉSUMÉ PAR ALGORITHME")
-    print("=" * 64)
-    by_algo = valid.groupby("algorithm").agg(
-        sil=("silhouette", "mean"),
-        db=("davies_bouldin", "mean"),
-        ch=("calinski_harabasz", "mean"),
-        k_mean=("k_found", "mean"),
-    )
-    for algo, row in by_algo.iterrows():
-        name = ALGO_LABELS.get(algo, algo)
-        print(f"  {name:<25s}  Sil={row['sil']:.4f}  "
-              f"DB={row['db']:.3f}  CH={row['ch']:.0f}  "
-              f"K_moyen={row['k_mean']:.1f}")
-
-    # ── Top 5 w_error (toutes algos confondues) ──────────────────────────
-    by_w = valid.groupby("w_error")["silhouette"].mean().sort_values(ascending=False)
-
-    print(f"\n{'─' * 64}")
-    print("  TOP 5 w_error (Silhouette moyenne, tous algos)")
-    print(f"{'─' * 64}")
-    for i, (w, sil) in enumerate(by_w.head(5).items()):
-        marker = "  ◀ SWEET SPOT" if i == 0 else ""
-        print(f"    w_error = {w:7.2f}  →  Silhouette = {sil:.4f}{marker}")
-
-    # ── Sweet spot ────────────────────────────────────────────────────────
-    best_w = by_w.idxmax()
-    best_sil = by_w.max()
-    print(f"\n{'=' * 64}")
-    print(f"  SWEET SPOT :  w_error ≈ {best_w:.2f}  "
-          f"(Silhouette moyen = {best_sil:.4f})")
-    print(f"{'=' * 64}")
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -1053,25 +748,38 @@ Exemples :
           f"({w_errors[0]:.1f} → {w_errors[-1]:.1f})")
     print(f"K = {args.k} (fixe),  {n_seeds} graines/combinaison")
 
-    # 3. Benchmark
+    # 3. Benchmark (écriture CSV incrémentale)
+    csv_path = OUTPUT_DIR / "raw_results.csv"
     df = run_benchmark(
         trajectories, n_original_points, w_errors,
         args.k, n_seeds, args.min_length,
         n_workers=n_workers, max_seg=max_seg, sil_sample=sil_sample,
-        max_ram_gb=args.max_ram,
+        max_ram_gb=args.max_ram, csv_path=csv_path,
     )
-
-    # 4. Sauvegarde CSV
-    csv_path = OUTPUT_DIR / "raw_results.csv"
-    df.to_csv(csv_path, index=False)
-    print(f"📊 Résultats bruts : {csv_path}")
+    print(f"📊 Résultats bruts : {csv_path}", flush=True)
 
     # 5. Figures
+    from benchmark.sensitivity_werror_plots import (
+        plot_pipeline_impact,
+        plot_sweet_spot,
+        plot_comparison_algo,
+        plot_segment_distributions,
+        print_summary,
+    )
+
     print("\nGénération des figures…")
     plot_pipeline_impact(df, OUTPUT_DIR)
     plot_sweet_spot(df, OUTPUT_DIR)
     plot_comparison_algo(df, OUTPUT_DIR)
-    plot_segment_distributions(trajectories, OUTPUT_DIR, args.min_length)
+
+    # Pré-calcul des longueurs pour plot_segment_distributions
+    w_samples = [0.5, 2.0, 5.0, 12.0, 25.0, 50.0, 100.0]
+    all_lengths: dict[float, list[float]] = {}
+    for w in w_samples:
+        segs, _ = compress_all(trajectories, w, args.min_length)
+        if segs:
+            all_lengths[w] = [s.length() for s in segs]
+    plot_segment_distributions(all_lengths, OUTPUT_DIR)
 
     # 6. Résumé
     print_summary(df)
