@@ -77,6 +77,12 @@ df_k12   = _build_k12()
 df_k50   = _load_if_exists("mid_benchmark_results.csv")
 df_heavy = _load_if_exists("heavy_benchmark_results.csv")
 
+SENSITIVITY_PATH = ROOT / "output" / "benchmark_sensitivity" / "raw_results.csv"
+df_sens = None
+if SENSITIVITY_PATH.exists():
+    df_sens = pd.read_csv(SENSITIVITY_PATH)
+    print(f"  Chargé : raw_results.csv (sensitivity, {len(df_sens)} lignes)")
+
 # ── Style global ─────────────────────────────────────────────────────────────
 plt.rcParams.update({
     "figure.dpi": 200,
@@ -415,6 +421,271 @@ def fig_k_comparison():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Figure 8 : Ratio Speedup KMedoids / KMeans vs N
+# ══════════════════════════════════════════════════════════════════════════════
+def fig_speedup():
+    """Montre combien de fois KMedoids est plus rapide que KMeans."""
+    km = df_k12[df_k12["Algorithm"] == "KMeans"]
+    kmed = df_k12[df_k12["Algorithm"] == "KMedoids"]
+    if km.empty or kmed.empty:
+        print("  ⚠ Données KMeans ou KMedoids manquantes, fig8 ignorée")
+        return
+
+    med_km = km.groupby("N")["Time_Seconds"].median()
+    med_kmed = kmed.groupby("N")["Time_Seconds"].median()
+    # Filtrer N >= 1000 pour éviter le bruit à petit N
+    common = sorted(n for n in set(med_km.index) & set(med_kmed.index) if n >= 1000)
+    if len(common) < 3:
+        print("  ⚠ Trop peu de N communs, fig8 ignorée")
+        return
+
+    ns = np.array(common)
+    ratio = np.array([med_km[n] / med_kmed[n] for n in common])
+
+    fig, ax = plt.subplots(figsize=(9, 5))
+    ax.set_title("Accélération de K-Medoids par rapport à K-Means (k = 12, N ≥ 1 000)", fontweight="bold")
+
+    ax.plot(ns, ratio, color="#9C27B0", marker="o", lw=2.2, markersize=6, zorder=3)
+    ax.fill_between(ns, 1, ratio, where=(ratio >= 1), color="#9C27B0", alpha=0.12)
+    ax.axhline(1, color="black", ls=":", lw=0.8, alpha=0.5)
+
+    # Annotations aux extrêmes
+    i_max = int(np.argmax(ratio))
+    ax.annotate(f"×{ratio[i_max]:.1f}",
+                xy=(ns[i_max], ratio[i_max]),
+                xytext=(0, 12), textcoords="offset points",
+                fontsize=11, fontweight="bold", color="#9C27B0", ha="center")
+
+    ax.set_xlabel("Taille de l'échantillon (N)")
+    ax.set_ylabel("Ratio (temps K-Means / temps K-Medoids)")
+    ax.set_ylim(bottom=0)
+    fig.tight_layout()
+    savefig(fig, "fig8_speedup_kmedoids_vs_kmeans.png")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Figure 9 : Heatmap silhouette (algorithme × N)
+# ══════════════════════════════════════════════════════════════════════════════
+def fig_heatmap_silhouette():
+    """Heatmap colorée : score silhouette médian par (algo, N)."""
+    algos_order = ["KMeans", "KMedoids", "AffinityPropagation"]
+    available = [a for a in algos_order if not df_k12[df_k12["Algorithm"] == a].empty]
+    if len(available) < 2:
+        print("  ⚠ Pas assez d'algos, fig9 ignorée")
+        return
+
+    med = df_k12.groupby(["N", "Algorithm"])["Silhouette_Score"].median().reset_index()
+    pivot = med.pivot(index="Algorithm", columns="N", values="Silhouette_Score")
+    pivot = pivot.reindex(available)
+
+    fig, ax = plt.subplots(figsize=(max(10, len(pivot.columns) * 0.6), 3.5))
+    im = ax.imshow(pivot.values, aspect="auto", cmap="RdYlGn", vmin=-0.05, vmax=0.25)
+
+    ax.set_xticks(range(len(pivot.columns)))
+    ax.set_xticklabels([str(n) for n in pivot.columns], rotation=45, ha="right", fontsize=8)
+    ax.set_yticks(range(len(available)))
+    ax.set_yticklabels([ALGO_LABELS[a] for a in available])
+
+    # Valeurs dans les cellules
+    for i in range(pivot.shape[0]):
+        for j in range(pivot.shape[1]):
+            val = pivot.values[i, j]
+            if np.isnan(val):
+                continue
+            txt_color = "white" if val < 0.05 else "black"
+            ax.text(j, i, f"{val:.3f}", ha="center", va="center", fontsize=7, color=txt_color)
+
+    cb = fig.colorbar(im, ax=ax, fraction=0.02, pad=0.04)
+    cb.set_label("Score silhouette (médiane)")
+    ax.set_title("Heatmap des scores silhouette par algorithme et taille N (k = 12)", fontweight="bold")
+    fig.tight_layout()
+    savefig(fig, "fig9_heatmap_silhouette.png")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Figure 10 : Stacked bar — décomposition matrice + clustering
+# ══════════════════════════════════════════════════════════════════════════════
+def fig_stacked_time():
+    """Temps matrice vs temps clustering — barres groupées côte à côte."""
+    if "Matrix_Time_Seconds" not in df_k12.columns:
+        print("  ⚠ Colonne Matrix_Time_Seconds absente, fig10 ignorée")
+        return
+
+    algos_order = ["KMeans", "KMedoids", "AffinityPropagation"]
+    all_ns = sorted(df_k12["N"].unique())
+    if len(all_ns) > 8:
+        indices = np.linspace(0, len(all_ns) - 1, 8, dtype=int)
+        selected_ns = [all_ns[i] for i in indices]
+    else:
+        selected_ns = all_ns
+
+    available = [a for a in algos_order if not df_k12[df_k12["Algorithm"] == a].empty]
+    # 2 barres par algo (matrice, clustering) → sous-groupes
+    n_bars = len(available) * 2
+    bar_width = 0.8 / n_bars
+    x = np.arange(len(selected_ns))
+    hatches = ["", "///"]  # plein = matrice, hachuré = clustering
+
+    fig, ax = plt.subplots(figsize=(13, 5.5))
+    ax.set_title("Décomposition du temps : matrice de distance vs clustering (k = 12)", fontweight="bold")
+
+    for i, algo in enumerate(available):
+        sub = df_k12[(df_k12["Algorithm"] == algo) & (df_k12["N"].isin(selected_ns))]
+        med = sub.groupby("N")[["Time_Seconds", "Matrix_Time_Seconds"]].median()
+        mat_times = np.array([med.loc[n, "Matrix_Time_Seconds"] if n in med.index else np.nan for n in selected_ns])
+        clust_times = np.array([med.loc[n, "Time_Seconds"] if n in med.index else np.nan for n in selected_ns])
+        c = ALGO_COLORS[algo]
+
+        off_mat = (2 * i - n_bars / 2 + 0.5) * bar_width
+        off_clu = (2 * i + 1 - n_bars / 2 + 0.5) * bar_width
+        ax.bar(x + off_mat, mat_times, bar_width, color=c, alpha=0.45,
+               edgecolor=c, linewidth=0.8, label=f"{ALGO_LABELS[algo]} — matrice")
+        ax.bar(x + off_clu, clust_times, bar_width, color=c, alpha=0.85,
+               edgecolor="white", linewidth=0.5, hatch="///",
+               label=f"{ALGO_LABELS[algo]} — clustering")
+
+    ax.set_xticks(x)
+    ax.set_xticklabels([str(n) for n in selected_ns])
+    ax.set_xlabel("Taille de l'échantillon (N)")
+    ax.set_ylabel("Temps (secondes, échelle log)")
+    ax.set_yscale("log")
+    ax.legend(fontsize=7, ncol=3, framealpha=0.8, loc="upper left")
+    fig.tight_layout()
+    savefig(fig, "fig10_decomposition_temps.png")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Figure 11 : Coefficient de variation du silhouette — stabilité
+# ══════════════════════════════════════════════════════════════════════════════
+def fig_cv_silhouette():
+    """CV = std/mean du score silhouette à chaque N, par algorithme."""
+    algos_order = ["KMeans", "KMedoids", "AffinityPropagation"]
+    available = [a for a in algos_order if not df_k12[df_k12["Algorithm"] == a].empty]
+
+    fig, ax = plt.subplots(figsize=(10, 5))
+    ax.set_title("Stabilité du clustering : coefficient de variation du silhouette (k = 12)", fontweight="bold")
+
+    for algo in available:
+        sub = df_k12[df_k12["Algorithm"] == algo].dropna(subset=["Silhouette_Score"])
+        g = sub.groupby("N")["Silhouette_Score"]
+        ns = sorted(sub["N"].unique())
+        cv = []
+        valid_ns = []
+        for n in ns:
+            vals = g.get_group(n)
+            if len(vals) >= 2 and vals.mean() != 0:
+                cv.append(vals.std() / abs(vals.mean()))
+                valid_ns.append(n)
+        if not valid_ns:
+            continue
+        ax.plot(valid_ns, cv, color=ALGO_COLORS[algo], marker=ALGO_MARKERS[algo],
+                markersize=5, lw=1.8, label=ALGO_LABELS[algo])
+
+    ax.set_xlabel("Taille de l'échantillon (N)")
+    ax.set_ylabel("CV (écart-type / moyenne)")
+    ax.legend(framealpha=0.8)
+    ax.axhline(0.1, color="gray", ls="--", lw=0.8, alpha=0.5, label="seuil 10 %")
+    fig.tight_layout()
+    savefig(fig, "fig11_stabilite_cv_silhouette.png")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Figure 12 : Davies-Bouldin & Calinski-Harabasz vs w_error (sensitivity)
+# ══════════════════════════════════════════════════════════════════════════════
+def fig_db_ch_sensitivity():
+    """Métriques internes de qualité en fonction de w_error (depuis sensitivity)."""
+    if df_sens is None:
+        print("  ⚠ Pas de données sensitivity, fig12 ignorée")
+        return
+
+    ALGO_MAP = {"kmeans": "KMeans", "kmedoids": "KMedoids", "ap": "AffinityPropagation"}
+    metrics = [
+        ("silhouette", "Score silhouette (↑)", False),
+        ("davies_bouldin", "Davies-Bouldin (↓)", True),
+        ("calinski_harabasz", "Calinski-Harabasz (↑)", False),
+    ]
+
+    fig, axes = plt.subplots(1, 3, figsize=(17, 5))
+    fig.suptitle("Métriques de qualité du clustering en fonction de w_error", fontweight="bold", y=1.02)
+
+    for ax, (col, ylabel, invert) in zip(axes, metrics):
+        for algo_key, algo_name in ALGO_MAP.items():
+            sub = df_sens[df_sens["algorithm"] == algo_key].dropna(subset=[col])
+            if sub.empty:
+                continue
+            med = sub.groupby("w_error")[col].median().sort_index()
+            q1 = sub.groupby("w_error")[col].quantile(0.25).sort_index()
+            q3 = sub.groupby("w_error")[col].quantile(0.75).sort_index()
+            ax.plot(med.index, med.values, color=ALGO_COLORS[algo_name],
+                    lw=1.8, label=ALGO_LABELS[algo_name])
+            ax.fill_between(med.index, q1.values, q3.values,
+                            color=ALGO_COLORS[algo_name], alpha=0.1)
+        ax.set_xlabel("w_error")
+        ax.set_ylabel(ylabel)
+        ax.set_xscale("log")
+        ax.legend(fontsize=8, framealpha=0.8)
+        if invert:
+            ax.invert_yaxis()
+
+    fig.tight_layout()
+    savefig(fig, "fig12_metriques_qualite_vs_werror.png")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Figure 13 : Taux de compression vs silhouette — trade-off
+# ══════════════════════════════════════════════════════════════════════════════
+def fig_compression_vs_silhouette():
+    """Scatter : compression_rate (%) vs silhouette, coloré par algorithme."""
+    if df_sens is None:
+        print("  ⚠ Pas de données sensitivity, fig13 ignorée")
+        return
+
+    ALGO_MAP = {"kmeans": "KMeans", "kmedoids": "KMedoids", "ap": "AffinityPropagation"}
+
+    fig, ax = plt.subplots(figsize=(10, 6))
+    ax.set_title("Trade-off : taux de compression vs qualité du clustering", fontweight="bold")
+
+    for algo_key, algo_name in ALGO_MAP.items():
+        sub = df_sens[df_sens["algorithm"] == algo_key].dropna(subset=["compression_rate", "silhouette"])
+        if sub.empty:
+            continue
+        med = sub.groupby("w_error")[["compression_rate", "silhouette"]].median()
+        cr_pct = med["compression_rate"] * 100
+        ax.scatter(cr_pct, med["silhouette"],
+                   color=ALGO_COLORS[algo_name], marker=ALGO_MARKERS[algo_name],
+                   s=40, alpha=0.75, label=ALGO_LABELS[algo_name], edgecolors="white", linewidths=0.5)
+        ax.plot(cr_pct.values, med["silhouette"].values,
+                color=ALGO_COLORS[algo_name], lw=1.0, alpha=0.4)
+
+    # Annoter quelques w_error clés (uniquement KMeans pour lisibilité)
+    ref_werrors = [1, 5, 12, 30, 60]
+    sub_km = df_sens[df_sens["algorithm"] == "kmeans"]
+    prev_y = None
+    for we in ref_werrors:
+        row = sub_km[sub_km["w_error"] == we]
+        if row.empty:
+            closest = sub_km.iloc[(sub_km["w_error"] - we).abs().argsort()[:1]]
+            if closest.empty:
+                continue
+            row = closest
+        cr = row["compression_rate"].median() * 100
+        sil = row["silhouette"].median()
+        # Alterner le décalage vertical pour éviter les superpositions
+        dy = 12 if (prev_y is None or abs(sil - prev_y) > 0.03) else -14
+        ax.annotate(f"w={we}", xy=(cr, sil), xytext=(6, dy), textcoords="offset points",
+                    fontsize=8, color="#555", fontweight="bold",
+                    arrowprops=dict(arrowstyle="-", color="#aaa", lw=0.6))
+        prev_y = sil
+
+    ax.set_xlabel("Taux de compression (%)")
+    ax.set_ylabel("Score silhouette (médiane)")
+    ax.xaxis.set_major_formatter(ticker.FormatStrFormatter("%.0f %%"))
+    ax.legend(framealpha=0.8)
+    fig.tight_layout()
+    savefig(fig, "fig13_compression_vs_silhouette.png")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Main
 # ══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
@@ -426,6 +697,12 @@ if __name__ == "__main__":
     fig_barplot_at_n()        # Fig 5 : Barplot à N fixe
     fig_boxplots()            # Fig 6 : Boxplots silhouette
     fig_k_comparison()        # Fig 7 : k=50 vs k=12 (si données dispo)
+    fig_speedup()                    # Fig 8  : Speedup KMedoids / KMeans
+    fig_heatmap_silhouette()         # Fig 9  : Heatmap silhouette (algo × N)
+    fig_stacked_time()               # Fig 10 : Décomposition matrice + clustering
+    fig_cv_silhouette()              # Fig 11 : Stabilité (CV silhouette)
+    fig_db_ch_sensitivity()          # Fig 12 : DB / CH / Sil vs w_error
+    fig_compression_vs_silhouette()  # Fig 13 : Compression vs silhouette trade-off
     print(f"\n✅ Figures enregistrées dans {OUT_DIR.relative_to(ROOT)}/")
-    print("   Pour le rapport, utiliser les figures k=12 (fig1–fig6).")
+    print("   Figures k=12 (fig1–fig11), sensitivity (fig12–fig13).")
     print("   La fig7 (comparaison k) illustre l'optimisation du paramètre k.")
