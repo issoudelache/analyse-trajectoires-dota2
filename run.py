@@ -51,6 +51,7 @@ from mvc.config import (
     OVERLAYS_DIR,
     VISUALIZATIONS_DIR,
 )
+from mvc.models.app_model import AppModel, COMPRESSED_SOURCES
 
 matplotlib.use("Agg")  # Backend non-interactif par défaut (pour les calculs)
 import json
@@ -60,51 +61,8 @@ import matplotlib.pyplot as plt
 import numpy as np
 
 # =============================================================================
-# CONFIGURATION
-# =============================================================================
-
-# Dossiers de données (compatibilité)
-if EXPORTED_DATA_MVC.exists():
-    COMPRESSED_SOURCES = [COMPRESSED_DIR, EXPORTED_DATA_MVC]
-else:
-    COMPRESSED_SOURCES = [COMPRESSED_DIR]
-
-
-# =============================================================================
 # COMMANDE: COMPRESS
 # =============================================================================
-
-
-def compress_single_match(csv_path, w_error, output_base):
-    """Compresse un seul match."""
-    match_id = csv_path.stem.replace("coord_", "")
-
-    try:
-        # Charger CSV
-        df = pd.read_csv(csv_path)
-
-        # Compresser les 10 joueurs
-        results = process_full_match(df, match_id, w_error=w_error)
-
-        # Calculer statistiques
-        total_orig = sum(len(df[f"x{i}"]) for i in range(10) if f"x{i}" in df.columns)
-        total_segments = sum(len(segs) for segs in results.values())
-
-        # Export JSON
-        output_dir = output_base / f"w_error_{w_error}"
-        output_dir.mkdir(parents=True, exist_ok=True)
-        output_path = output_dir / f"{match_id}_compressed.json"
-
-        exporter = JSONExporter()
-        output_path = exporter.export_match(results, match_id, output_path, w_error)
-
-        size_kb = output_path.stat().st_size // 1024
-        reduction = (1 - total_segments / total_orig) * 100 if total_orig > 0 else 0
-
-        return True, match_id, total_orig, total_segments, reduction, size_kb
-
-    except Exception as e:
-        return False, match_id, 0, 0, 0, 0, str(e)
 
 
 def cmd_compress(args):
@@ -135,11 +93,11 @@ def cmd_compress(args):
     tasks = [(csv_path, w_error, COMPRESSED_DIR) for csv_path in csv_files]
 
     with Pool(processes=num_workers) as pool:
-        results = pool.starmap(compress_single_match, tasks)
+        results = pool.starmap(AppModel._compress_one, tasks)
 
     # Résumé
-    successes = [r for r in results if r[0]]
-    failures = [r for r in results if not r[0]]
+    successes = [r for r in results if r.success]
+    failures = [r for r in results if not r.success]
 
     print()
     print("=" * 70)
@@ -148,15 +106,15 @@ def cmd_compress(args):
     print(f"✅ Succès: {len(successes)}/{len(results)}")
 
     if successes:
-        avg_reduction = sum(r[4] for r in successes) / len(successes)
-        total_size = sum(r[5] for r in successes)
+        avg_reduction = sum(r.reduction_pct for r in successes) / len(successes)
+        total_size = sum(r.size_kb for r in successes)
         print(f"📊 Compression moyenne: {avg_reduction:.1f}%")
         print(f"💾 Taille totale: {total_size} KB")
 
     if failures:
         print(f"❌ Échecs: {len(failures)}")
         for fail in failures[:5]:
-            print(f"   - {fail[1]}: {fail[6]}")
+            print(f"   - {fail.match_id}: {fail.error}")
 
     print(f"\n📁 Output: {COMPRESSED_DIR / f'w_error_{w_error}'}")
 
@@ -422,27 +380,6 @@ def cmd_zoom_proof(args):
 # =============================================================================
 
 
-def find_compressed_file(w_error, match_id):
-    """Trouve le fichier JSON compressé dans les sources disponibles."""
-    w_error_str = str(int(w_error)) if w_error == int(w_error) else str(w_error)
-
-    for source_dir in COMPRESSED_SOURCES:
-        json_path = (
-            source_dir / f"w_error_{w_error_str}" / f"{match_id}_compressed.json"
-        )
-        if json_path.exists():
-            return json_path
-
-        # Essayer format décimal
-        json_path = (
-            source_dir / f"w_error_{float(w_error)}" / f"{match_id}_compressed.json"
-        )
-        if json_path.exists():
-            return json_path
-
-    return None
-
-
 def cmd_overlay(args):
     """Génère un overlay sur la carte Dota 2."""
     print("=" * 70)
@@ -459,7 +396,7 @@ def cmd_overlay(args):
         return
 
     # Trouver le fichier compressé
-    json_path = find_compressed_file(args.w_error, args.match_id)
+    json_path = AppModel._find_compressed_file(args.w_error, args.match_id)
     if not json_path:
         print("❌ Données compressées introuvables")
         print(

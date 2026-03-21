@@ -28,8 +28,8 @@ from mvc.config import (
 )
 from dota_analytics.clustering import load_data, run_clustering
 from dota_analytics.compression import MDLCompressor, process_full_match
+from dota_analytics.plotting import PLAYER_COLORS
 from dota_analytics.plotting import (
-    PLAYER_COLORS,
     get_available_games,
     get_available_w_errors,
     load_compressed_data,

@@ -9,4 +9,11 @@ exported_data_mvc/
 output/
 *.tar.gz
 *.log
-outpout
+.pytest_cache/
+.idea/
+.vscode/
+*.egg-info/
+dist/
+build/
+.env
+.env.local

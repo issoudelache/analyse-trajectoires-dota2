@@ -1,23 +1,22 @@
 """
 Package d'analyse de trajectoires Dota 2.
 
-Architecture plate (Flat Structure) pour une meilleure maintenabilité.
-
 Modules:
     - structures: Structures de données + Export JSON
     - geometry: Calculs géométriques vectorisés
     - compression: Algorithme MDL de compression de trajectoires
-    - plotting: Visualisations statiques et interactives
+    - plotting: Visualisation (overlays, comparaisons, clusters, interactif)
     - clustering: Analyse de clusters de trajectoires
+    - metrics / mining / recoding: Outils d'analyse complémentaires
 """
 
 __version__ = "1.0.0"
 __author__ = "Analyse Trajectoires Dota 2 Team"
 
-# Imports principaux pour faciliter l'utilisation
-from .structures import Trajectory, TrajectoryPoint, Segment, JSONExporter, export_match
+from .structures import Trajectory, TrajectoryPoint, Segment, JSONExporter
 from .compression import MDLCompressor, process_full_match
 from .geometry import GeometryUtils
+from .plotting import PLAYER_COLORS
 
 __all__ = [
     "Trajectory",
@@ -26,6 +25,6 @@ __all__ = [
     "MDLCompressor",
     "process_full_match",
     "JSONExporter",
-    "export_match",
     "GeometryUtils",
+    "PLAYER_COLORS",
 ]

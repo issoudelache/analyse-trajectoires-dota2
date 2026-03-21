@@ -40,14 +40,18 @@ class AppController:
     def start_compression(self, w_error: float, match_id: Optional[str] = None):
         """Lance la compression dans un thread séparé."""
         def _worker():
-            def _progress(current, total, result: CompressResult):
+            try:
+                def _progress(current, total, result: CompressResult):
+                    if self.view:
+                        self.view.after(0, self.view.on_compress_progress, current, total, result)
+
+                results = self.model.compress(w_error, match_id, callback=_progress)
+
                 if self.view:
-                    self.view.after(0, self.view.on_compress_progress, current, total, result)
-
-            results = self.model.compress(w_error, match_id, callback=_progress)
-
-            if self.view:
-                self.view.after(0, self.view.on_compress_done, results)
+                    self.view.after(0, self.view.on_compress_done, results)
+            except Exception as e:
+                if self.view:
+                    self.view.after(0, self.view.on_compress_done, [])
 
         t = threading.Thread(target=_worker, daemon=True)
         t.start()
@@ -57,7 +61,10 @@ class AppController:
     def load_overlay(self, w_error: float, match_id: str):
         """Charge les données d'overlay (thread)."""
         def _worker():
-            data = self.model.load_overlay_data(w_error, match_id)
+            try:
+                data = self.model.load_overlay_data(w_error, match_id)
+            except Exception:
+                data = None
             if self.view:
                 self.view.after(0, self.view.on_overlay_loaded, data)
 
@@ -69,7 +76,10 @@ class AppController:
     def load_cluster_visu(self, w_error: float, cluster_id: int):
         """Charge les données de visualisation cluster (thread)."""
         def _worker():
-            data = self.model.load_cluster_visu_data(w_error, cluster_id)
+            try:
+                data = self.model.load_cluster_visu_data(w_error, cluster_id)
+            except Exception:
+                data = None
             if self.view:
                 self.view.after(0, self.view.on_cluster_loaded, data)
 
@@ -81,7 +91,10 @@ class AppController:
     def load_comparison(self, w_error: float, match_id: str):
         """Charge les données de comparaison brut vs compressé (thread)."""
         def _worker():
-            data = self.model.load_comparison_data(w_error, match_id)
+            try:
+                data = self.model.load_comparison_data(w_error, match_id)
+            except Exception:
+                data = None
             if self.view:
                 self.view.after(0, self.view.on_comparison_loaded, data)
 
