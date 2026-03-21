@@ -83,6 +83,12 @@ if SENSITIVITY_PATH.exists():
     df_sens = pd.read_csv(SENSITIVITY_PATH)
     print(f"  Chargé : raw_results.csv (sensitivity, {len(df_sens)} lignes)")
 
+OPTIMAL_K_PATH = ROOT / "output" / "benchmark_optimal_k" / "optimal_k_results.csv"
+df_optk = None
+if OPTIMAL_K_PATH.exists():
+    df_optk = pd.read_csv(OPTIMAL_K_PATH)
+    print(f"  Chargé : optimal_k_results.csv ({len(df_optk)} lignes)")
+
 # ── Style global ─────────────────────────────────────────────────────────────
 plt.rcParams.update({
     "figure.dpi": 200,
@@ -686,6 +692,97 @@ def fig_compression_vs_silhouette():
 
 
 # ══════════════════════════════════════════════════════════════════════════════
+# Figure 14 : Silhouette vs k — recherche du k optimal
+# ══════════════════════════════════════════════════════════════════════════════
+def fig_silhouette_vs_k():
+    if df_optk is None:
+        print("  ⏩ fig14 ignorée (pas de données optimal_k)")
+        return
+    fig, ax = plt.subplots(figsize=(8, 4.5))
+    for algo, color, marker in [("KMeans", ALGO_COLORS["KMeans"], "o"),
+                                  ("KMedoids", ALGO_COLORS["KMedoids"], "s")]:
+        sub = df_optk[df_optk["algorithm"] == algo]
+        g = sub.groupby("k")["silhouette"]
+        med = g.median()
+        q1 = g.quantile(0.25)
+        q3 = g.quantile(0.75)
+        ax.plot(med.index, med.values, color=color, marker=marker,
+                markersize=4, lw=2, label=ALGO_LABELS[algo])
+        ax.fill_between(med.index, q1.values, q3.values, color=color, alpha=0.12)
+    ax.set_xlabel("Nombre de clusters (k)")
+    ax.set_ylabel("Score silhouette")
+    ax.set_title("Silhouette en fonction de k")
+    ax.axvline(12, color="grey", ls="--", lw=1, alpha=0.6, label="k = 12")
+    ax.legend(framealpha=0.8)
+    fig.tight_layout()
+    savefig(fig, "fig14_silhouette_vs_k.png")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Figure 15 : Courbe du coude (inertie) — recherche du k optimal
+# ══════════════════════════════════════════════════════════════════════════════
+def fig_elbow():
+    if df_optk is None:
+        print("  ⏩ fig15 ignorée (pas de données optimal_k)")
+        return
+    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(12, 4.5))
+    for ax, algo, title in [(ax1, "KMeans", "K-Means"),
+                             (ax2, "KMedoids", "K-Medoids (PAM)")]:
+        sub = df_optk[df_optk["algorithm"] == algo]
+        g = sub.groupby("k")["inertia"]
+        med = g.median()
+        q1 = g.quantile(0.25)
+        q3 = g.quantile(0.75)
+        color = ALGO_COLORS[algo]
+        ax.plot(med.index, med.values, color=color, marker="o", markersize=3, lw=2)
+        ax.fill_between(med.index, q1.values, q3.values, color=color, alpha=0.12)
+        ax.axvline(12, color="grey", ls="--", lw=1, alpha=0.6, label="k = 12")
+        ax.set_xlabel("Nombre de clusters (k)")
+        ax.set_ylabel("Inertie")
+        ax.set_title(f"Méthode du coude — {title}")
+        ax.legend(framealpha=0.8)
+    fig.tight_layout()
+    savefig(fig, "fig15_elbow.png")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
+# Figure 16 : Panneau combiné 4 métriques vs k
+# ══════════════════════════════════════════════════════════════════════════════
+def fig_combined_optimal_k():
+    if df_optk is None:
+        print("  ⏩ fig16 ignorée (pas de données optimal_k)")
+        return
+    metrics = [
+        ("silhouette", "Score silhouette", False),
+        ("davies_bouldin", "Indice Davies-Bouldin", True),
+        ("calinski_harabasz", "Indice Calinski-Harabasz", False),
+        ("inertia", "Inertie", True),
+    ]
+    fig, axes = plt.subplots(2, 2, figsize=(12, 9))
+    for ax, (col, ylabel, invert) in zip(axes.flat, metrics):
+        for algo in ["KMeans", "KMedoids"]:
+            sub = df_optk[df_optk["algorithm"] == algo]
+            g = sub.groupby("k")[col]
+            med = g.median()
+            q1 = g.quantile(0.25)
+            q3 = g.quantile(0.75)
+            color = ALGO_COLORS[algo]
+            ax.plot(med.index, med.values, color=color, marker=ALGO_MARKERS[algo],
+                    markersize=3, lw=1.8, label=ALGO_LABELS[algo])
+            ax.fill_between(med.index, q1.values, q3.values, color=color, alpha=0.10)
+        ax.axvline(12, color="grey", ls="--", lw=1, alpha=0.6, label="k = 12")
+        ax.set_xlabel("k")
+        ax.set_ylabel(ylabel)
+        ax.set_title(ylabel)
+        if invert:
+            ax.invert_yaxis()
+        ax.legend(fontsize=8, framealpha=0.8)
+    fig.suptitle("Recherche du nombre optimal de clusters", fontsize=14, y=1.01)
+    fig.tight_layout()
+    savefig(fig, "fig16_combined_optimal_k.png")
+
+
+# ══════════════════════════════════════════════════════════════════════════════
 # Main
 # ══════════════════════════════════════════════════════════════════════════════
 if __name__ == "__main__":
@@ -703,6 +800,8 @@ if __name__ == "__main__":
     fig_cv_silhouette()              # Fig 11 : Stabilité (CV silhouette)
     fig_db_ch_sensitivity()          # Fig 12 : DB / CH / Sil vs w_error
     fig_compression_vs_silhouette()  # Fig 13 : Compression vs silhouette trade-off
+    fig_silhouette_vs_k()            # Fig 14 : Silhouette vs k
+    fig_elbow()                      # Fig 15 : Courbe du coude (inertie)
+    fig_combined_optimal_k()         # Fig 16 : Panneau combiné 4 métriques vs k
     print(f"\n✅ Figures enregistrées dans {OUT_DIR.relative_to(ROOT)}/")
-    print("   Figures k=12 (fig1–fig11), sensitivity (fig12–fig13).")
-    print("   La fig7 (comparaison k) illustre l'optimisation du paramètre k.")
+    print("   Figures k=12 (fig1–fig11), sensitivity (fig12–fig13), optimal k (fig14–fig16).")
