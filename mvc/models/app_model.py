@@ -16,7 +16,7 @@ import numpy as np
 import pandas as pd
 from PIL import Image
 
-from config import (
+from mvc.config import (
     BASE_DIR,
     CANVAS_PATH,
     CLUSTERS_DIR,
@@ -105,6 +105,18 @@ class AppModel:
     """
 
     # ── helpers chemins ──────────────────────────────────────────────────
+
+    @staticmethod
+    def _load_canvas_image() -> Optional[Image.Image]:
+        """Charge et recadre l'image canvas.png en carré."""
+        if not CANVAS_PATH.exists():
+            return None
+        img = Image.open(str(CANVAS_PATH))
+        w, h = img.size
+        if w > h:
+            left = (w - h) // 2
+            img = img.crop((left, 0, left + h, h))
+        return img
 
     @staticmethod
     def _find_compressed_file(w_error: float, match_id: str) -> Optional[Path]:
@@ -212,18 +224,15 @@ class AppModel:
 
     def load_overlay_data(self, w_error: float, match_id: str) -> Optional[OverlayData]:
         json_path = self._find_compressed_file(w_error, match_id)
-        if json_path is None or not CANVAS_PATH.exists():
+        if json_path is None:
+            return None
+
+        canvas_img = self._load_canvas_image()
+        if canvas_img is None:
             return None
 
         data_dir = json_path.parent.parent
         data = load_compressed_data(data_dir, w_error, match_id)
-
-        canvas_img = Image.open(str(CANVAS_PATH))
-        # Recadrer en carré
-        w, h = canvas_img.size
-        if w > h:
-            left = (w - h) // 2
-            canvas_img = canvas_img.crop((left, 0, left + h, h))
 
         player_segments: Dict[int, list] = {}
         min_tick = float("inf")
@@ -252,20 +261,17 @@ class AppModel:
     def load_comparison_data(self, w_error: float, match_id: str) -> Optional[ComparisonData]:
         """Charge les données brutes (CSV) et compressées (JSON) pour comparaison."""
         json_path = self._find_compressed_file(w_error, match_id)
-        if json_path is None or not CANVAS_PATH.exists():
+        if json_path is None:
+            return None
+
+        canvas_img = self._load_canvas_image()
+        if canvas_img is None:
             return None
 
         csv_dir = self._csv_dir()
         csv_path = csv_dir / f"coord_{match_id}.csv"
         if not csv_path.exists():
             return None
-
-        # --- Canvas ---
-        canvas_img = Image.open(str(CANVAS_PATH))
-        w, h = canvas_img.size
-        if w > h:
-            left = (w - h) // 2
-            canvas_img = canvas_img.crop((left, 0, left + h, h))
 
         # --- Données brutes (CSV) ---
         df = pd.read_csv(csv_path)
@@ -356,11 +362,9 @@ class AppModel:
                                   s["end"]["x"], s["end"]["y"], color))
                     break
 
-        canvas_img = Image.open(str(CANVAS_PATH))
-        w, h = canvas_img.size
-        if w > h:
-            left = (w - h) // 2
-            canvas_img = canvas_img.crop((left, 0, left + h, h))
+        canvas_img = self._load_canvas_image()
+        if canvas_img is None:
+            return None
 
         return ClusterVisuData(
             canvas_image=canvas_img,

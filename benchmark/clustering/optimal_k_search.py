@@ -27,7 +27,7 @@ from sklearn.preprocessing import StandardScaler
 from sklearn.metrics import silhouette_score
 
 from dota_analytics.clustering import load_data
-from config import COMPRESSED_DIR
+from mvc.config import COMPRESSED_DIR
 
 # ── Paramètres ─────────────────────────────────────────────────────────────
 K_RANGE = list(range(2, 21)) + list(range(25, 101, 5))  # 2..20 puis 25,30,...,100

@@ -78,7 +78,7 @@ from sklearn.metrics import silhouette_score
 from dota_analytics.clustering import load_data
 from dota_analytics.custom_kmedoids import CustomKMedoids
 from dota_analytics.custom_ap import CustomAffinityPropagation
-from config import COMPRESSED_DIR
+from mvc.config import COMPRESSED_DIR
 
 # ---------------------------------------------------------------------------
 # PARAMÈTRES DU BENCHMARK

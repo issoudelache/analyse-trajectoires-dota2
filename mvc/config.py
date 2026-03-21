@@ -3,7 +3,8 @@ from pathlib import Path
 # =============================================================================
 # CHEMINS DU PROJET
 # =============================================================================
-BASE_DIR = Path(__file__).parent.resolve()
+# Remonte d'un niveau depuis mvc/ pour atteindre la racine du projet
+BASE_DIR = Path(__file__).parent.parent.resolve()
 
 # Données d'entrée
 DATA_DIR = BASE_DIR / "data-dota"

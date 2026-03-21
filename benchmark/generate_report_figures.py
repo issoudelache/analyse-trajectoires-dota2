@@ -20,7 +20,7 @@ import matplotlib.pyplot as plt
 import matplotlib.ticker as ticker
 
 # ── Chemins ──────────────────────────────────────────────────────────────────
-ROOT = pathlib.Path(__file__).resolve().parent
+ROOT = pathlib.Path(__file__).resolve().parent.parent          # racine du projet
 DATA_DIR = ROOT / "output" / "benchmark_clustering"
 OUT_DIR  = ROOT / "output" / "rapport_figures"
 OUT_DIR.mkdir(parents=True, exist_ok=True)

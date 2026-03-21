@@ -40,6 +40,17 @@ from dota_analytics.plotting import (
     plot_markov_network,
 )
 from dota_analytics.structures import JSONExporter, Trajectory, TrajectoryPoint
+from mvc.config import (
+    BASE_DIR,
+    CANVAS_PATH,
+    CLUSTERS_DIR,
+    COMPRESSED_DIR,
+    DATA_DIR,
+    EXPORTED_DATA_MVC,
+    OUTPUT_DIR,
+    OVERLAYS_DIR,
+    VISUALIZATIONS_DIR,
+)
 
 matplotlib.use("Agg")  # Backend non-interactif par défaut (pour les calculs)
 import json
@@ -52,32 +63,11 @@ import numpy as np
 # CONFIGURATION
 # =============================================================================
 
-BASE_DIR = Path(__file__).parent
-# Le dossier de données est imbriqué : data-dota/data-dota/
-DATA_DIR = BASE_DIR / "data-dota" / "data-dota"
-OUTPUT_DIR = BASE_DIR / "output"
-COMPRESSED_DIR = OUTPUT_DIR / "compressed"
-VISUALIZATIONS_DIR = OUTPUT_DIR / "visualizations"
-OVERLAYS_DIR = OUTPUT_DIR / "overlays"
-CLUSTERS_DIR = OUTPUT_DIR / "clusters"
-CANVAS_PATH = BASE_DIR / "canvas.png"
-
 # Dossiers de données (compatibilité)
-EXPORTED_DATA_MVC = BASE_DIR / "exported_data_mvc"
 if EXPORTED_DATA_MVC.exists():
     COMPRESSED_SOURCES = [COMPRESSED_DIR, EXPORTED_DATA_MVC]
 else:
     COMPRESSED_SOURCES = [COMPRESSED_DIR]
-
-# Créer les dossiers de sortie
-for dir_path in [
-    OUTPUT_DIR,
-    COMPRESSED_DIR,
-    VISUALIZATIONS_DIR,
-    OVERLAYS_DIR,
-    CLUSTERS_DIR,
-]:
-    dir_path.mkdir(parents=True, exist_ok=True)
 
 
 # =============================================================================
