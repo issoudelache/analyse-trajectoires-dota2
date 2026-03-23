@@ -86,6 +86,7 @@ N_ITERATIONS = 20
 # UTILITAIRES COMMUNS
 # =============================================================================
 
+
 def _uniform_sampling(points: list, n_segments: int) -> list:
     """Echantillonnage uniforme : garde 1 point sur K pour n_segments segments."""
     n_pts = len(points)
@@ -115,7 +116,9 @@ def _calibrate_dp(trajectory: Trajectory, target_n: int, tolerance: int = 2):
 
     for _ in range(40):
         mid = (lo + hi) / 2
-        segs = DouglasPeuckerCompressor(epsilon=mid).compress_player_trajectory(trajectory)
+        segs = DouglasPeuckerCompressor(epsilon=mid).compress_player_trajectory(
+            trajectory
+        )
         diff = abs(len(segs) - target_n)
         if diff < best_diff:
             best_diff = diff
@@ -154,20 +157,30 @@ def _draw_segments(ax, segments: list, color: str, label: str, zorder: int = 5):
     """Dessine des segments sur un axe matplotlib."""
     for i, seg in enumerate(segments):
         ax.plot(
-            [seg.start.x, seg.end.x], [seg.start.y, seg.end.y],
-            color=color, linewidth=2.0, alpha=0.9, zorder=zorder,
+            [seg.start.x, seg.end.x],
+            [seg.start.y, seg.end.y],
+            color=color,
+            linewidth=2.0,
+            alpha=0.9,
+            zorder=zorder,
             label=label if i == 0 else None,
         )
         ax.plot(
-            [seg.start.x, seg.end.x], [seg.start.y, seg.end.y],
-            "o", color=color, markersize=5,
-            markeredgecolor="black", markeredgewidth=0.5, zorder=zorder + 1,
+            [seg.start.x, seg.end.x],
+            [seg.start.y, seg.end.y],
+            "o",
+            color=color,
+            markersize=5,
+            markeredgecolor="black",
+            markeredgewidth=0.5,
+            zorder=zorder + 1,
         )
 
 
 # =============================================================================
 # MODE BASELINE — Expérimentation 1 visuelle
 # =============================================================================
+
 
 def _find_good_window() -> Trajectory:
     """Cherche une fenetre de ~3000 ticks avec amplitude spatiale >= 50 unites."""
@@ -196,7 +209,9 @@ def run_baseline() -> None:
     print("=" * 70)
     print("EXPERIMENTATION 1 : COMPARAISON MDL vs BASELINES (VISUEL)")
     print("=" * 70)
-    print(f"Match: {BASELINE_MATCH_ID} | Joueur: {BASELINE_PLAYER_ID} | w_error: {W_ERROR_MDL}")
+    print(
+        f"Match: {BASELINE_MATCH_ID} | Joueur: {BASELINE_PLAYER_ID} | w_error: {W_ERROR_MDL}"
+    )
     print()
 
     print("Chargement...")
@@ -224,23 +239,40 @@ def run_baseline() -> None:
 
     print("Generation figure 4 panneaux...")
     fig, axes = plt.subplots(
-        1, 4, figsize=(22, 6), sharex=True, sharey=True,
+        1,
+        4,
+        figsize=(22, 6),
+        sharex=True,
+        sharey=True,
         gridspec_kw={"wspace": 0.05},
     )
     fig.suptitle(
         f"Experimentation 1 : Comparaison a Taux de Compression Egal (~{ratio:.0f}%)\n"
         f"Match {BASELINE_MATCH_ID} - Joueur {BASELINE_PLAYER_ID}",
-        fontsize=14, fontweight="bold", y=1.01,
+        fontsize=14,
+        fontweight="bold",
+        y=1.01,
     )
 
     bg = dict(color="lightgray", linewidth=0.6, alpha=0.5, zorder=1)
-    pt = dict(color="lightgray", marker=".", linewidth=0, markersize=4, alpha=0.4, zorder=2)
+    pt = dict(
+        color="lightgray", marker=".", linewidth=0, markersize=4, alpha=0.4, zorder=2
+    )
 
     # Panneau 1 : Original
     ax = axes[0]
     ax.plot(xs_raw, ys_raw, color="steelblue", linewidth=1.4, alpha=0.85, zorder=3)
-    ax.plot(xs_raw, ys_raw, "o", color="steelblue", markersize=3.5,
-            markeredgecolor="navy", markeredgewidth=0.4, alpha=0.7, zorder=4)
+    ax.plot(
+        xs_raw,
+        ys_raw,
+        "o",
+        color="steelblue",
+        markersize=3.5,
+        markeredgecolor="navy",
+        markeredgewidth=0.4,
+        alpha=0.7,
+        zorder=4,
+    )
     ax.set_title(f"Original\n({n_pts} points)", fontsize=12, fontweight="bold", pad=8)
     ax.set_facecolor("#f0f4ff")
     ax.grid(True, alpha=0.25, linestyle="--")
@@ -251,14 +283,16 @@ def run_baseline() -> None:
     # Panneaux 2-4 : algos
     panels = [
         (axes[1], segs_uniform, "darkorange", "Echantillonnage Uniforme", "#fff8f0"),
-        (axes[2], segs_dp,      "forestgreen", "Douglas-Peucker",         "#f0fff4"),
-        (axes[3], segs_mdl,     "crimson",     f"MDL (w={W_ERROR_MDL})",  "#fff0f0"),
+        (axes[2], segs_dp, "forestgreen", "Douglas-Peucker", "#f0fff4"),
+        (axes[3], segs_mdl, "crimson", f"MDL (w={W_ERROR_MDL})", "#fff0f0"),
     ]
     for ax, segs, color, label, bg_col in panels:
         ax.plot(xs_raw, ys_raw, **bg)
         ax.plot(xs_raw, ys_raw, **pt)
         _draw_segments(ax, segs, color=color, label=label)
-        ax.set_title(f"{label}\n({len(segs)} segments)", fontsize=12, fontweight="bold", pad=8)
+        ax.set_title(
+            f"{label}\n({len(segs)} segments)", fontsize=12, fontweight="bold", pad=8
+        )
         ax.set_facecolor(bg_col)
         ax.grid(True, alpha=0.25, linestyle="--")
         ax.set_aspect("equal")
@@ -330,21 +364,27 @@ def _process_task_maths(task: tuple) -> Optional[list]:
     segs_uni = _uniform_sampling(pts, N)
 
     records = []
-    for algo, segs in [("MDL", segs_mdl), ("Uniforme", segs_uni), ("Douglas-Peucker", segs_dp)]:
+    for algo, segs in [
+        ("MDL", segs_mdl),
+        ("Uniforme", segs_uni),
+        ("Douglas-Peucker", segs_dp),
+    ]:
         if not segs:
             continue
-        records.append({
-            "Sample_ID":        sample_id,
-            "Match_ID":         match_id,
-            "Tick_Start":       tick_start,
-            "Tick_End":         tick_start + WINDOW_SIZE,
-            "N_Points":         len(pts),
-            "N_Segments":       len(segs),
-            "Algorithm":        algo,
-            "RMSE":             rmse_segments_to_points(pts, segs),
-            "Hausdorff":        hausdorff_distance(pts, segs),
-            "Stop_Preservation": stop_preservation_rate(pts, segs),
-        })
+        records.append(
+            {
+                "Sample_ID": sample_id,
+                "Match_ID": match_id,
+                "Tick_Start": tick_start,
+                "Tick_End": tick_start + WINDOW_SIZE,
+                "N_Points": len(pts),
+                "N_Segments": len(segs),
+                "Algorithm": algo,
+                "RMSE": rmse_segments_to_points(pts, segs),
+                "Hausdorff": hausdorff_distance(pts, segs),
+                "Stop_Preservation": stop_preservation_rate(pts, segs),
+            }
+        )
     return records if records else None
 
 
@@ -354,24 +394,32 @@ def _generate_boxplots(df_results: pd.DataFrame, n_valid: int) -> None:
         f"Experimentation 1 (Quantitative) : MDL vs Baselines - {n_valid} echantillons\n"
         f"Joueur {MATHS_PLAYER_ID} | Fenetres {WINDOW_SIZE} ticks | "
         f"w_error={W_ERROR_MDL} | {N_WORKERS} workers paralleles",
-        fontsize=12, fontweight="bold", y=1.02,
+        fontsize=12,
+        fontweight="bold",
+        y=1.02,
     )
     metrics_cfg = [
-        {"col": "RMSE",
-         "title": "RMSE\n(Plus bas = meilleur)",
-         "ylabel": "RMSE (unites de carte)",
-         "ax": axes[0],
-         "note": "Fidelite quadratique moyenne"},
-        {"col": "Hausdorff",
-         "title": "Distance de Hausdorff\n(Plus bas = meilleur)",
-         "ylabel": "Hausdorff (unites de carte)",
-         "ax": axes[1],
-         "note": "Erreur maximale garantie"},
-        {"col": "Stop_Preservation",
-         "title": "Preservation des Arrets\n(Plus haut = meilleur)",
-         "ylabel": "Taux de preservation (%)",
-         "ax": axes[2],
-         "note": "Fidelite semantique"},
+        {
+            "col": "RMSE",
+            "title": "RMSE\n(Plus bas = meilleur)",
+            "ylabel": "RMSE (unites de carte)",
+            "ax": axes[0],
+            "note": "Fidelite quadratique moyenne",
+        },
+        {
+            "col": "Hausdorff",
+            "title": "Distance de Hausdorff\n(Plus bas = meilleur)",
+            "ylabel": "Hausdorff (unites de carte)",
+            "ax": axes[1],
+            "note": "Erreur maximale garantie",
+        },
+        {
+            "col": "Stop_Preservation",
+            "title": "Preservation des Arrets\n(Plus haut = meilleur)",
+            "ylabel": "Taux de preservation (%)",
+            "ax": axes[2],
+            "note": "Fidelite semantique",
+        },
     ]
     for cfg in metrics_cfg:
         ax, col = cfg["ax"], cfg["col"]
@@ -387,21 +435,37 @@ def _generate_boxplots(df_results: pd.DataFrame, n_valid: int) -> None:
             continue
 
         bp = ax.boxplot(
-            data_by_algo, patch_artist=True, notch=False, widths=0.5,
+            data_by_algo,
+            patch_artist=True,
+            notch=False,
+            widths=0.5,
             medianprops={"color": "black", "linewidth": 2.5},
-            whiskerprops={"linewidth": 1.4}, capprops={"linewidth": 1.4},
-            flierprops={"marker": "o", "markersize": 3, "alpha": 0.2, "linestyle": "none"},
+            whiskerprops={"linewidth": 1.4},
+            capprops={"linewidth": 1.4},
+            flierprops={
+                "marker": "o",
+                "markersize": 3,
+                "alpha": 0.2,
+                "linestyle": "none",
+            },
         )
         for patch, color in zip(bp["boxes"], colors):
             patch.set_facecolor(color)
             patch.set_alpha(0.72)
 
         for i, (vals, color) in enumerate(zip(data_by_algo, colors)):
-            sample = vals if len(vals) <= 400 else np.random.choice(vals, 400, replace=False)
+            sample = (
+                vals if len(vals) <= 400 else np.random.choice(vals, 400, replace=False)
+            )
             jitter = np.random.uniform(-0.2, 0.2, size=len(sample))
             ax.scatter(
-                np.full(len(sample), i + 1) + jitter, sample,
-                color=color, alpha=0.15, s=8, zorder=3, edgecolors="none",
+                np.full(len(sample), i + 1) + jitter,
+                sample,
+                color=color,
+                alpha=0.15,
+                s=8,
+                zorder=3,
+                edgecolors="none",
             )
 
         ax.set_xticks(range(1, len(labels) + 1))
@@ -410,15 +474,38 @@ def _generate_boxplots(df_results: pd.DataFrame, n_valid: int) -> None:
         ax.set_ylabel(cfg["ylabel"], fontsize=10)
         ax.grid(True, axis="y", alpha=0.3, linestyle="--")
         ax.yaxis.set_major_formatter(mticker.FormatStrFormatter("%.1f"))
-        ax.text(0.5, -0.12, cfg["note"], transform=ax.transAxes,
-                ha="center", va="bottom", fontsize=9, style="italic", color="gray")
+        ax.text(
+            0.5,
+            -0.12,
+            cfg["note"],
+            transform=ax.transAxes,
+            ha="center",
+            va="bottom",
+            fontsize=9,
+            style="italic",
+            color="gray",
+        )
 
         for i, vals in enumerate(data_by_algo):
             med = np.median(vals)
-            ax.text(i + 1.28, med, f"{med:.2f}",
-                    ha="left", va="center", fontsize=8.5, fontweight="bold")
-            ax.text(i + 1, ax.get_ylim()[0], f"n={len(vals)}",
-                    ha="center", va="bottom", fontsize=7.5, color="gray")
+            ax.text(
+                i + 1.28,
+                med,
+                f"{med:.2f}",
+                ha="left",
+                va="center",
+                fontsize=8.5,
+                fontweight="bold",
+            )
+            ax.text(
+                i + 1,
+                ax.get_ylim()[0],
+                f"n={len(vals)}",
+                ha="center",
+                va="bottom",
+                fontsize=7.5,
+                color="gray",
+            )
 
     plt.tight_layout(rect=[0, 0.02, 1, 1])
     fig.savefig(MATHS_OUTPUT_PNG, dpi=300, bbox_inches="tight", facecolor="white")
@@ -433,7 +520,9 @@ def run_maths() -> pd.DataFrame:
     print("=" * 70)
     print("EXPERIMENTATION 1 (QUANTITATIVE) : BENCHMARK MATHEMATIQUE PARALLELE")
     print("=" * 70)
-    print(f"Echantillons : {N_SAMPLES} fenetres x {WINDOW_SIZE} ticks | w_error={W_ERROR_MDL}")
+    print(
+        f"Echantillons : {N_SAMPLES} fenetres x {WINDOW_SIZE} ticks | w_error={W_ERROR_MDL}"
+    )
     print(f"Parallelisme : {N_WORKERS} workers / {os.cpu_count()} coeurs")
     print()
 
@@ -501,7 +590,9 @@ def run_maths() -> pd.DataFrame:
     print(f"\n   {n_valid} valides | {n_skipped} rejetes | {elapsed_total:.1f}s")
 
     if not all_records:
-        print("\nAucun echantillon valide. Verifier MIN_POINTS, WINDOW_SIZE et les donnees.")
+        print(
+            "\nAucun echantillon valide. Verifier MIN_POINTS, WINDOW_SIZE et les donnees."
+        )
         return pd.DataFrame()
 
     df_results = pd.DataFrame(all_records)
@@ -517,12 +608,16 @@ def run_maths() -> pd.DataFrame:
     for algo in ALGO_ORDER:
         sub = df_results[df_results["Algorithm"] == algo]
         sp = sub["Stop_Preservation"].dropna()
-        print(fmt.format(
-            algo,
-            f"{sub['RMSE'].median():.3f}", f"+-{sub['RMSE'].std():.3f}",
-            f"{sub['Hausdorff'].median():.3f}", f"+-{sub['Hausdorff'].std():.3f}",
-            f"{sp.median():.1f}%" if len(sp) > 0 else "N/A",
-        ))
+        print(
+            fmt.format(
+                algo,
+                f"{sub['RMSE'].median():.3f}",
+                f"+-{sub['RMSE'].std():.3f}",
+                f"{sub['Hausdorff'].median():.3f}",
+                f"+-{sub['Hausdorff'].std():.3f}",
+                f"{sp.median():.1f}%" if len(sp) > 0 else "N/A",
+            )
+        )
     print("\n  RMSE / Hausdorff : Plus bas = meilleur")
     print("  Stop%            : Plus haut = meilleur (fidelite semantique)")
 
@@ -536,6 +631,7 @@ def run_maths() -> pd.DataFrame:
 # =============================================================================
 # MODE TIME — Expérimentation 2 complexité temporelle
 # =============================================================================
+
 
 def _load_points_pool(min_size: int) -> list:
     """Charge un pool de points suffisant pour les tailles testees."""
@@ -565,7 +661,9 @@ def _load_points_pool(min_size: int) -> list:
             pool.extend(_extract(f))
             added = len(pool) - before
             if added > 0:
-                print(f"   {f.stem.replace('coord_', '')} : +{added} points (total: {len(pool)})")
+                print(
+                    f"   {f.stem.replace('coord_', '')} : +{added} points (total: {len(pool)})"
+                )
             if len(pool) >= min_size:
                 break
     return pool
@@ -579,8 +677,18 @@ def _generate_time_plot(df_results: pd.DataFrame) -> None:
         ys = sub["Mean_Time_ms"].values
         stds = sub["Std_Time_ms"].values
         color = ALGO_COLORS[algo]
-        ax.plot(xs, ys, color=color, linewidth=2.5, marker="o", markersize=7,
-                markeredgecolor="white", markeredgewidth=1.2, label=algo, zorder=5)
+        ax.plot(
+            xs,
+            ys,
+            color=color,
+            linewidth=2.5,
+            marker="o",
+            markersize=7,
+            markeredgecolor="white",
+            markeredgewidth=1.2,
+            label=algo,
+            zorder=5,
+        )
         ax.fill_between(xs, ys - stds, ys + stds, color=color, alpha=0.15, zorder=3)
 
     n_max = df_results["N_points"].max()
@@ -592,9 +700,13 @@ def _generate_time_plot(df_results: pd.DataFrame) -> None:
             continue
         y_val = row["Mean_Time_ms"].values[0]
         ax.annotate(
-            f"{y_val:.1f} ms", xy=(n_max, y_val),
-            xytext=(8, 0), textcoords="offset points",
-            fontsize=9, color=ALGO_COLORS[algo], fontweight="bold",
+            f"{y_val:.1f} ms",
+            xy=(n_max, y_val),
+            xytext=(8, 0),
+            textcoords="offset points",
+            fontsize=9,
+            color=ALGO_COLORS[algo],
+            fontweight="bold",
         )
 
     ax.set_xlabel("Nombre de points N", fontsize=13, fontweight="bold")
@@ -602,14 +714,18 @@ def _generate_time_plot(df_results: pd.DataFrame) -> None:
     ax.set_title(
         "Complexite Temporelle Empirique : MDL vs Baselines\n"
         f"({N_ITERATIONS} iterations par taille, w_error MDL={W_ERROR_MDL})",
-        fontsize=13, fontweight="bold", pad=12,
+        fontsize=13,
+        fontweight="bold",
+        pad=12,
     )
     ax.legend(fontsize=12, framealpha=0.9, loc="upper left")
     ax.grid(True, alpha=0.3, linestyle="--")
     ax.set_xticks(df_results["N_points"].unique())
     ax.set_xticklabels(
         [f"{n:,}" for n in sorted(df_results["N_points"].unique())],
-        rotation=30, ha="right", fontsize=10,
+        rotation=30,
+        ha="right",
+        fontsize=10,
     )
     ax.set_xlim(left=0)
     ax.set_ylim(bottom=0)
@@ -638,7 +754,9 @@ def run_time() -> pd.DataFrame:
 
     sizes_to_run = [s for s in SIZES if s <= n_available]
     if len(sizes_to_run) < len(SIZES):
-        print(f"   Tailles ignorees (pool insuffisant) : {[s for s in SIZES if s > n_available]}\n")
+        print(
+            f"   Tailles ignorees (pool insuffisant) : {[s for s in SIZES if s > n_available]}\n"
+        )
 
     mdl_compressor = MDLCompressor(w_error=W_ERROR_MDL, verbose=False)
     records: list = []
@@ -646,12 +764,12 @@ def run_time() -> pd.DataFrame:
     for N in sizes_to_run:
         print(f"N = {N:,} points")
         start_idx = random.randint(0, n_available - N)
-        window_pts = pool[start_idx: start_idx + N]
+        window_pts = pool[start_idx : start_idx + N]
         trajectory = Trajectory(points=window_pts)
 
         segs_ref = mdl_compressor.compress_player_trajectory(trajectory)
         C = max(1, len(segs_ref))
-        print(f"   MDL reference : {C} segments (compression {(1 - C/N)*100:.1f}%)")
+        print(f"   MDL reference : {C} segments (compression {(1 - C / N) * 100:.1f}%)")
 
         best_eps, _ = _calibrate_dp(trajectory, C)
         dp_compressor = DouglasPeuckerCompressor(epsilon=best_eps)
@@ -673,13 +791,15 @@ def run_time() -> pd.DataFrame:
         for algo, t_list in times.items():
             arr = np.array(t_list)
             print(f"   {algo:<20} : {arr.mean():7.3f} ms  (+-{arr.std():.3f})")
-            records.append({
-                "N_points":      N,
-                "Algorithm":     algo,
-                "Mean_Time_ms":  round(float(arr.mean()), 4),
-                "Std_Time_ms":   round(float(arr.std()), 4),
-                "N_segments_ref": C,
-            })
+            records.append(
+                {
+                    "N_points": N,
+                    "Algorithm": algo,
+                    "Mean_Time_ms": round(float(arr.mean()), 4),
+                    "Std_Time_ms": round(float(arr.std()), 4),
+                    "N_segments_ref": C,
+                }
+            )
         print()
 
     df_results = pd.DataFrame(records)
@@ -687,7 +807,9 @@ def run_time() -> pd.DataFrame:
     print(f"CSV -> {TIME_OUTPUT_CSV}")
 
     print("\n" + "=" * 70 + "\nRESUME DES TEMPS MOYENS (ms)\n" + "=" * 70)
-    pivot = df_results.pivot(index="N_points", columns="Algorithm", values="Mean_Time_ms")
+    pivot = df_results.pivot(
+        index="N_points", columns="Algorithm", values="Mean_Time_ms"
+    )
     pivot = pivot[[a for a in ALGO_ORDER if a in pivot.columns]]
     print(pivot.to_string(float_format=lambda x: f"{x:8.3f}"))
 
@@ -700,6 +822,7 @@ def run_time() -> pd.DataFrame:
 # =============================================================================
 # MAIN
 # =============================================================================
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -718,7 +841,9 @@ exemples :
         """,
     )
     parser.add_argument(
-        "--mode", choices=["baseline", "maths", "time"], required=True,
+        "--mode",
+        choices=["baseline", "maths", "time"],
+        required=True,
         help="Mode d'execution",
     )
     args = parser.parse_args()

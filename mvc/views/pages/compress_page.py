@@ -18,8 +18,10 @@ class CompressPage(BasePage):
 
     def _build(self):
         ctk.CTkLabel(
-            self, text="Compression MDL",
-            font=ctk.CTkFont(size=24, weight="bold"), text_color=ACCENT,
+            self,
+            text="Compression MDL",
+            font=ctk.CTkFont(size=24, weight="bold"),
+            text_color=ACCENT,
         ).pack(pady=(30, 20))
 
         form = ctk.CTkFrame(self, fg_color=BG_CARD, corner_radius=12)
@@ -39,8 +41,11 @@ class CompressPage(BasePage):
         self.mid_entry.pack(side="left", padx=10)
 
         self.run_btn = ctk.CTkButton(
-            form, text="Lancer Compression", fg_color=ACCENT,
-            hover_color="#c33750", command=self._on_run,
+            form,
+            text="Lancer Compression",
+            fg_color=ACCENT,
+            hover_color="#c33750",
+            command=self._on_run,
         )
         self.run_btn.pack(pady=20)
 
@@ -48,7 +53,9 @@ class CompressPage(BasePage):
         self.progress.pack(pady=10)
         self.progress.set(0)
 
-        self.log_text = ctk.CTkTextbox(self, height=250, fg_color=BG_CARD, corner_radius=10)
+        self.log_text = ctk.CTkTextbox(
+            self, height=250, fg_color=BG_CARD, corner_radius=10
+        )
         self.log_text.pack(fill="both", expand=True, padx=20, pady=(5, 15))
 
     def _on_run(self):
@@ -74,5 +81,7 @@ class CompressPage(BasePage):
     def on_compress_done(self, results):
         self.run_btn.configure(state="normal", text="Lancer Compression")
         ok = sum(1 for r in results if r.success)
-        self.log_text.insert("end", f"\n{'='*50}\nTerminé: {ok}/{len(results)} matchs compressés.\n")
+        self.log_text.insert(
+            "end", f"\n{'=' * 50}\nTerminé: {ok}/{len(results)} matchs compressés.\n"
+        )
         self.log_text.see("end")

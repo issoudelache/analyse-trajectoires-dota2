@@ -15,6 +15,7 @@ from mvc.views.pages import (
     ComparisonPage,
     CompressPage,
     MenuPage,
+    MiningPage,
     OverlayPage,
 )
 from mvc.views.theme import ACCENT, ACCENT2, BG_CARD, BG_DARK, TEXT_DIM, TEXT_LIGHT
@@ -42,10 +43,21 @@ class MainWindow(ctk.CTk):
         self._animating = False
 
         self._pages["menu"] = MenuPage(self.content_frame, controller, self.switch_page)
-        self._pages["overlay"] = OverlayPage(self.content_frame, controller, self.switch_page)
-        self._pages["compress"] = CompressPage(self.content_frame, controller, self.switch_page)
-        self._pages["cluster"] = ClusterPage(self.content_frame, controller, self.switch_page)
-        self._pages["comparison"] = ComparisonPage(self.content_frame, controller, self.switch_page)
+        self._pages["overlay"] = OverlayPage(
+            self.content_frame, controller, self.switch_page
+        )
+        self._pages["compress"] = CompressPage(
+            self.content_frame, controller, self.switch_page
+        )
+        self._pages["cluster"] = ClusterPage(
+            self.content_frame, controller, self.switch_page
+        )
+        self._pages["comparison"] = ComparisonPage(
+            self.content_frame, controller, self.switch_page
+        )
+        self._pages["mining"] = MiningPage(
+            self.content_frame, controller, self.switch_page
+        )
 
         self.switch_page("menu", animate=False)
 
@@ -55,12 +67,16 @@ class MainWindow(ctk.CTk):
         self.sidebar.pack_propagate(False)
 
         ctk.CTkLabel(
-            self.sidebar, text="DOTA 2",
-            font=ctk.CTkFont(size=22, weight="bold"), text_color=ACCENT,
+            self.sidebar,
+            text="DOTA 2",
+            font=ctk.CTkFont(size=22, weight="bold"),
+            text_color=ACCENT,
         ).pack(pady=(25, 2))
         ctk.CTkLabel(
-            self.sidebar, text="Trajectories",
-            font=ctk.CTkFont(size=13), text_color=TEXT_DIM,
+            self.sidebar,
+            text="Trajectories",
+            font=ctk.CTkFont(size=13),
+            text_color=TEXT_DIM,
         ).pack(pady=(0, 30))
 
         nav_items = [
@@ -69,24 +85,33 @@ class MainWindow(ctk.CTk):
             ("Compression", "compress"),
             ("Clusters", "cluster"),
             ("Comparaison", "comparison"),
+            ("PrefixSpan", "mining"),
         ]
         self._nav_buttons = {}
         for label, page_name in nav_items:
             btn = ctk.CTkButton(
-                self.sidebar, text=label,
-                fg_color="transparent", text_color=TEXT_LIGHT,
-                hover_color=ACCENT2, anchor="w",
-                height=40, corner_radius=8,
+                self.sidebar,
+                text=label,
+                fg_color="transparent",
+                text_color=TEXT_LIGHT,
+                hover_color=ACCENT2,
+                anchor="w",
+                height=40,
+                corner_radius=8,
                 command=lambda p=page_name: self.switch_page(p),
             )
             btn.pack(fill="x", padx=12, pady=3)
             self._nav_buttons[page_name] = btn
 
-        ctk.CTkFrame(self.sidebar, height=1, fg_color=TEXT_DIM).pack(fill="x", padx=20, pady=20)
+        ctk.CTkFrame(self.sidebar, height=1, fg_color=TEXT_DIM).pack(
+            fill="x", padx=20, pady=20
+        )
 
         ctk.CTkLabel(
-            self.sidebar, text="v1.1.0",
-            font=ctk.CTkFont(size=10), text_color=TEXT_DIM,
+            self.sidebar,
+            text="v1.1.0",
+            font=ctk.CTkFont(size=10),
+            text_color=TEXT_DIM,
         ).pack(side="bottom", pady=15)
 
         self.content_frame = ctk.CTkFrame(self, fg_color="transparent")
@@ -171,3 +196,18 @@ class MainWindow(ctk.CTk):
         page = self._pages.get("comparison")
         if page:
             page.on_comparison_loaded(data)
+
+    def on_recode_done(self, success, num_sequences, error_msg):
+        page = self._pages.get("mining")
+        if page:
+            page.on_recode_done(success, num_sequences, error_msg)
+
+    def on_mining_done(self, success, num_patterns, top_patterns, error_msg):
+        page = self._pages.get("mining")
+        if page:
+            page.on_mining_done(success, num_patterns, top_patterns, error_msg)
+
+    def on_graph_generated(self, success, image_bytes, error_msg):
+        page = self._pages.get("mining")
+        if page:
+            page.on_graph_generated(success, image_bytes, error_msg)

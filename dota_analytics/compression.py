@@ -97,7 +97,7 @@ class MDLCompressor:
             if self.verbose:
                 print(
                     f"  Segment {len(segments)}: [{start_idx}->{best_idx}] "
-                    f"length={segment.length():.2f}, skipped={best_idx-start_idx-1}"
+                    f"length={segment.length():.2f}, skipped={best_idx - start_idx - 1}"
                 )
             start_idx = best_idx
 

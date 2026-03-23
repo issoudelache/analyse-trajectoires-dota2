@@ -17,4 +17,6 @@ TEXT_LIGHT = "#eaeaea"
 TEXT_DIM = "#8899aa"
 
 # ── Noms des joueurs ────────────────────────────────────────────────────
-PLAYER_NAMES = [f"Radiant {i+1}" for i in range(5)] + [f"Dire {i+1}" for i in range(5)]
+PLAYER_NAMES = [f"Radiant {i + 1}" for i in range(5)] + [
+    f"Dire {i + 1}" for i in range(5)
+]

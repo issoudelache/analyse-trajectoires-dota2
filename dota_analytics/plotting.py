@@ -98,7 +98,9 @@ def load_compressed_data(data_dir, w_error, game_id):
 
     if not json_path.exists():
         w_error_str = str(float(w_error))
-        json_path = Path(data_dir) / f"w_error_{w_error_str}" / f"{game_id}_compressed.json"
+        json_path = (
+            Path(data_dir) / f"w_error_{w_error_str}" / f"{game_id}_compressed.json"
+        )
 
     if not json_path.exists():
         raise FileNotFoundError(f"Fichier non trouvé: {json_path}")
@@ -671,7 +673,9 @@ def plot_markov_network(patterns_dict: dict, min_len: int = 2, output_path: str 
         alpha=0.95,
     )
 
-    nx.draw_networkx_labels(G, pos, font_size=10, font_weight="bold", font_color="black")
+    nx.draw_networkx_labels(
+        G, pos, font_size=10, font_weight="bold", font_color="black"
+    )
 
     nx.draw_networkx_edges(
         G,

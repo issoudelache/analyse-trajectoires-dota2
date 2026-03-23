@@ -22,35 +22,54 @@ class ClusterPage(BasePage):
         top.pack(fill="x", padx=10, pady=(10, 5))
         top.pack_propagate(False)
 
-        ctk.CTkLabel(top, text="w_error:", font=ctk.CTkFont(size=13)).pack(side="left", padx=(15, 5))
+        ctk.CTkLabel(top, text="w_error:", font=ctk.CTkFont(size=13)).pack(
+            side="left", padx=(15, 5)
+        )
         self.w_error_var = ctk.StringVar(value="12.0")
         self.w_error_combo = ctk.CTkComboBox(
-            top, variable=self.w_error_var, values=["12.0"], width=100,
+            top,
+            variable=self.w_error_var,
+            values=["12.0"],
+            width=100,
             command=self._on_w_error_change,
         )
         self.w_error_combo.pack(side="left", padx=5)
 
-        ctk.CTkLabel(top, text="Cluster:", font=ctk.CTkFont(size=13)).pack(side="left", padx=(20, 5))
+        ctk.CTkLabel(top, text="Cluster:", font=ctk.CTkFont(size=13)).pack(
+            side="left", padx=(20, 5)
+        )
         self.cluster_var = ctk.StringVar(value="0")
         self.cluster_combo = ctk.CTkComboBox(
-            top, variable=self.cluster_var, values=["0"], width=100,
+            top,
+            variable=self.cluster_var,
+            values=["0"],
+            width=100,
         )
         self.cluster_combo.pack(side="left", padx=5)
 
         self.load_btn = ctk.CTkButton(
-            top, text="Afficher", fg_color=ACCENT, hover_color="#c33750",
+            top,
+            text="Afficher",
+            fg_color=ACCENT,
+            hover_color="#c33750",
             command=self._on_load,
         )
         self.load_btn.pack(side="left", padx=15)
 
         self.new_cluster_btn = ctk.CTkButton(
-            top, text="Nouveau Clustering", fg_color=ACCENT2, hover_color="#1a4a80",
+            top,
+            text="Nouveau Clustering",
+            fg_color=ACCENT2,
+            hover_color="#1a4a80",
             command=self._show_cluster_form,
         )
         self.new_cluster_btn.pack(side="left", padx=5)
 
         self.info_label = ctk.CTkLabel(
-            top, text="", font=ctk.CTkFont(size=12), text_color=TEXT_DIM,
+            top,
+            text="",
+            font=ctk.CTkFont(size=12),
+            text_color=TEXT_DIM,
         )
         self.info_label.pack(side="right", padx=15)
 
@@ -58,50 +77,69 @@ class ClusterPage(BasePage):
         self.no_cluster_frame = ctk.CTkFrame(self, fg_color="transparent")
 
         ctk.CTkLabel(
-            self.no_cluster_frame, text="Aucun résultat de clustering trouvé",
-            font=ctk.CTkFont(size=18, weight="bold"), text_color=TEXT_LIGHT,
+            self.no_cluster_frame,
+            text="Aucun résultat de clustering trouvé",
+            font=ctk.CTkFont(size=18, weight="bold"),
+            text_color=TEXT_LIGHT,
         ).pack(pady=(80, 10))
         ctk.CTkLabel(
             self.no_cluster_frame,
             text="Lancez d'abord le clustering sur les données compressées.",
-            font=ctk.CTkFont(size=13), text_color=TEXT_DIM,
+            font=ctk.CTkFont(size=13),
+            text_color=TEXT_DIM,
         ).pack(pady=(0, 25))
 
-        cluster_form = ctk.CTkFrame(self.no_cluster_frame, fg_color=BG_CARD, corner_radius=12)
+        cluster_form = ctk.CTkFrame(
+            self.no_cluster_frame, fg_color=BG_CARD, corner_radius=12
+        )
         cluster_form.pack(padx=60, fill="x")
 
         row_algo = ctk.CTkFrame(cluster_form, fg_color="transparent")
         row_algo.pack(fill="x", padx=20, pady=(15, 5))
-        ctk.CTkLabel(row_algo, text="Algorithme:", width=120, anchor="w").pack(side="left")
+        ctk.CTkLabel(row_algo, text="Algorithme:", width=120, anchor="w").pack(
+            side="left"
+        )
         self.algo_var = ctk.StringVar(value="kmeans")
         ctk.CTkOptionMenu(
-            row_algo, variable=self.algo_var,
-            values=["kmeans", "affinity", "kmedoids"], width=150,
+            row_algo,
+            variable=self.algo_var,
+            values=["kmeans", "affinity", "kmedoids"],
+            width=150,
         ).pack(side="left", padx=10)
 
         row_mf = ctk.CTkFrame(cluster_form, fg_color="transparent")
         row_mf.pack(fill="x", padx=20, pady=5)
-        ctk.CTkLabel(row_mf, text="Max fichiers:", width=120, anchor="w").pack(side="left")
+        ctk.CTkLabel(row_mf, text="Max fichiers:", width=120, anchor="w").pack(
+            side="left"
+        )
         self.maxfiles_entry = ctk.CTkEntry(row_mf, width=100, placeholder_text="10")
         self.maxfiles_entry.pack(side="left", padx=10)
         self.maxfiles_entry.insert(0, "10")
 
         row_nc = ctk.CTkFrame(cluster_form, fg_color="transparent")
         row_nc.pack(fill="x", padx=20, pady=5)
-        ctk.CTkLabel(row_nc, text="Nb clusters:", width=120, anchor="w").pack(side="left")
+        ctk.CTkLabel(row_nc, text="Nb clusters:", width=120, anchor="w").pack(
+            side="left"
+        )
         self.nclusters_entry = ctk.CTkEntry(row_nc, width=100, placeholder_text="50")
         self.nclusters_entry.pack(side="left", padx=10)
         self.nclusters_entry.insert(0, "50")
 
         self.run_cluster_btn = ctk.CTkButton(
-            cluster_form, text="Lancer Clustering", fg_color=ACCENT, hover_color="#c33750",
+            cluster_form,
+            text="Lancer Clustering",
+            fg_color=ACCENT,
+            hover_color="#c33750",
             command=self._on_run_clustering,
         )
         self.run_cluster_btn.pack(pady=20)
 
         self.cluster_log = ctk.CTkLabel(
-            self.no_cluster_frame, text="",
-            font=ctk.CTkFont(size=12), text_color=TEXT_DIM, wraplength=500,
+            self.no_cluster_frame,
+            text="",
+            font=ctk.CTkFont(size=12),
+            text_color=TEXT_DIM,
+            wraplength=500,
         )
         self.cluster_log.pack(pady=10)
 
@@ -142,8 +180,16 @@ class ClusterPage(BasePage):
             w = float(self.w_error_var.get())
         except ValueError:
             return
-        max_f = int(self.maxfiles_entry.get()) if self.maxfiles_entry.get().strip() else None
-        n_c = int(self.nclusters_entry.get()) if self.nclusters_entry.get().strip() else 50
+        max_f = (
+            int(self.maxfiles_entry.get())
+            if self.maxfiles_entry.get().strip()
+            else None
+        )
+        n_c = (
+            int(self.nclusters_entry.get())
+            if self.nclusters_entry.get().strip()
+            else 50
+        )
         algo = self.algo_var.get()
         self.run_cluster_btn.configure(state="disabled", text="En cours…")
         self.cluster_log.configure(text="Clustering en cours, veuillez patienter…")
@@ -173,4 +219,6 @@ class ClusterPage(BasePage):
             return
         self.map_canvas.set_background(data.canvas_image)
         self.map_canvas.draw_raw_segments(data.segments)
-        self.info_label.configure(text=f"Cluster #{data.cluster_id} — {data.total_in_cluster} segments")
+        self.info_label.configure(
+            text=f"Cluster #{data.cluster_id} — {data.total_in_cluster} segments"
+        )

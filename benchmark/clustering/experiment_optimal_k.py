@@ -41,12 +41,17 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import numpy as np
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 import pandas as pd
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.preprocessing import StandardScaler
-from sklearn.metrics import silhouette_score, davies_bouldin_score, calinski_harabasz_score
+from sklearn.metrics import (
+    silhouette_score,
+    davies_bouldin_score,
+    calinski_harabasz_score,
+)
 
 from dota_analytics.clustering import load_data
 from dota_analytics.custom_kmedoids import CustomKMedoids
@@ -58,19 +63,32 @@ OUT_DIR.mkdir(parents=True, exist_ok=True)
 CSV_PATH = OUT_DIR / "optimal_k_results.csv"
 
 CSV_COLUMNS = [
-    "k", "seed", "algorithm",
-    "silhouette", "davies_bouldin", "calinski_harabasz", "inertia",
+    "k",
+    "seed",
+    "algorithm",
+    "silhouette",
+    "davies_bouldin",
+    "calinski_harabasz",
+    "inertia",
     "time_seconds",
 ]
 
 # ── Style ────────────────────────────────────────────────────────────────────
-plt.rcParams.update({
-    "figure.dpi": 200, "savefig.dpi": 200,
-    "font.family": "serif", "font.size": 11,
-    "axes.titlesize": 13, "axes.labelsize": 12,
-    "legend.fontsize": 10, "axes.grid": True, "grid.alpha": 0.3,
-    "axes.spines.top": False, "axes.spines.right": False,
-})
+plt.rcParams.update(
+    {
+        "figure.dpi": 200,
+        "savefig.dpi": 200,
+        "font.family": "serif",
+        "font.size": 11,
+        "axes.titlesize": 13,
+        "axes.labelsize": 12,
+        "legend.fontsize": 10,
+        "axes.grid": True,
+        "grid.alpha": 0.3,
+        "axes.spines.top": False,
+        "axes.spines.right": False,
+    }
+)
 COLORS = {"KMeans": "#2196F3", "KMedoids": "#FF9800"}
 LABELS = {"KMeans": "K-Means", "KMedoids": "K-Medoids (PAM)"}
 
@@ -101,9 +119,8 @@ def _compute_D(starts: np.ndarray, ends: np.ndarray) -> np.ndarray:
     proj_s = vec_sx * vx + vec_sy * vy
     proj_e = vec_ex * vx + vec_ey * vy
     base_l = lengths[:, np.newaxis]
-    d_par = (
-        np.minimum(np.abs(proj_s), np.abs(proj_s - base_l))
-        + np.minimum(np.abs(proj_e), np.abs(proj_e - base_l))
+    d_par = np.minimum(np.abs(proj_s), np.abs(proj_s - base_l)) + np.minimum(
+        np.abs(proj_e), np.abs(proj_e - base_l)
     )
 
     D_asym = (d_perp + d_angle + d_par).astype(np.float32)
@@ -121,8 +138,11 @@ def _silhouette(D, labels):
     if len(np.unique(l_v)) < 2:
         return float("nan")
     try:
-        return float(silhouette_score(D_v.astype(np.float64), l_v,
-                                      metric="precomputed", n_jobs=-1))
+        return float(
+            silhouette_score(
+                D_v.astype(np.float64), l_v, metric="precomputed", n_jobs=-1
+            )
+        )
     except Exception:
         return float("nan")
 
@@ -154,7 +174,7 @@ def _append_csv(row: dict):
 
 # ── Main benchmark ───────────────────────────────────────────────────────────
 def run_benchmark(n_segments: int, k_range: range, n_seeds: int):
-    print(f"═══ Recherche du k optimal ═══", flush=True)
+    print("═══ Recherche du k optimal ═══", flush=True)
     print(f"  N segments : {n_segments}", flush=True)
     print(f"  k range    : {k_range.start}..{k_range.stop - 1}", flush=True)
     print(f"  Seeds      : {n_seeds}", flush=True)
@@ -191,7 +211,9 @@ def run_benchmark(n_segments: int, k_range: range, n_seeds: int):
     t0 = time.perf_counter()
     D = _compute_D(starts, ends)
     t_matrix = time.perf_counter() - t0
-    print(f"  Matrice {n_segments}×{n_segments} calculée en {t_matrix:.1f}s", flush=True)
+    print(
+        f"  Matrice {n_segments}×{n_segments} calculée en {t_matrix:.1f}s", flush=True
+    )
     print(flush=True)
 
     # 4. Init CSV
@@ -204,18 +226,27 @@ def run_benchmark(n_segments: int, k_range: range, n_seeds: int):
         for seed in range(n_seeds):
             # --- KMeans ---
             t0 = time.perf_counter()
-            km = MiniBatchKMeans(n_clusters=k, random_state=seed, batch_size=4096,
-                                 n_init=5, verbose=0)
+            km = MiniBatchKMeans(
+                n_clusters=k, random_state=seed, batch_size=4096, n_init=5, verbose=0
+            )
             labels_km = km.fit_predict(X_scaled)
             t_km = time.perf_counter() - t0
             sil_km = _silhouette(D, labels_km)
             db_km, ch_km = _db_ch(X_scaled, labels_km)
             inertia_km = float(km.inertia_)
 
-            _append_csv({"k": k, "seed": seed, "algorithm": "KMeans",
-                         "silhouette": f"{sil_km:.6f}", "davies_bouldin": f"{db_km:.6f}",
-                         "calinski_harabasz": f"{ch_km:.6f}", "inertia": f"{inertia_km:.6f}",
-                         "time_seconds": f"{t_km:.6f}"})
+            _append_csv(
+                {
+                    "k": k,
+                    "seed": seed,
+                    "algorithm": "KMeans",
+                    "silhouette": f"{sil_km:.6f}",
+                    "davies_bouldin": f"{db_km:.6f}",
+                    "calinski_harabasz": f"{ch_km:.6f}",
+                    "inertia": f"{inertia_km:.6f}",
+                    "time_seconds": f"{t_km:.6f}",
+                }
+            )
             done += 1
 
             # --- KMedoids ---
@@ -227,20 +258,36 @@ def run_benchmark(n_segments: int, k_range: range, n_seeds: int):
             sil_kmed = _silhouette(D, labels_kmed)
             db_kmed, ch_kmed = _db_ch(X_scaled, labels_kmed)
             # KMedoids inertia: sum of distances to medoid
-            inertia_kmed = sum(D[i, kmed.medoid_indices_[labels_kmed[i]]]
-                               for i in range(len(labels_kmed)))
+            inertia_kmed = sum(
+                D[i, kmed.medoid_indices_[labels_kmed[i]]]
+                for i in range(len(labels_kmed))
+            )
 
-            _append_csv({"k": k, "seed": seed, "algorithm": "KMedoids",
-                         "silhouette": f"{sil_kmed:.6f}", "davies_bouldin": f"{db_kmed:.6f}",
-                         "calinski_harabasz": f"{ch_kmed:.6f}", "inertia": f"{inertia_kmed:.6f}",
-                         "time_seconds": f"{t_kmed:.6f}"})
+            _append_csv(
+                {
+                    "k": k,
+                    "seed": seed,
+                    "algorithm": "KMedoids",
+                    "silhouette": f"{sil_kmed:.6f}",
+                    "davies_bouldin": f"{db_kmed:.6f}",
+                    "calinski_harabasz": f"{ch_kmed:.6f}",
+                    "inertia": f"{inertia_kmed:.6f}",
+                    "time_seconds": f"{t_kmed:.6f}",
+                }
+            )
             done += 1
 
         pct = done / total_runs * 100
-        print(f"  k={k:3d}  sil(KM)={sil_km:.4f}  sil(KMed)={sil_kmed:.4f}  "
-              f"[{pct:5.1f}%]", flush=True)
+        print(
+            f"  k={k:3d}  sil(KM)={sil_km:.4f}  sil(KMed)={sil_kmed:.4f}  "
+            f"[{pct:5.1f}%]",
+            flush=True,
+        )
 
-    print(f"\n✅ Résultats sauvegardés dans {CSV_PATH.relative_to(PROJECT_ROOT)}", flush=True)
+    print(
+        f"\n✅ Résultats sauvegardés dans {CSV_PATH.relative_to(PROJECT_ROOT)}",
+        flush=True,
+    )
     return CSV_PATH
 
 
@@ -259,9 +306,21 @@ def generate_figures(csv_path: Path):
         fig, ax = plt.subplots(figsize=(9, 5))
         ax.set_title(f"Méthode du coude — {LABELS[algo]}", fontweight="bold")
         ks = med.index.values
-        ax.plot(ks, med["inertia"].values, color=COLORS[algo], marker="o", markersize=4, lw=2)
-        ax.fill_between(ks, q1["inertia"].values, q3["inertia"].values,
-                        color=COLORS[algo], alpha=0.12)
+        ax.plot(
+            ks,
+            med["inertia"].values,
+            color=COLORS[algo],
+            marker="o",
+            markersize=4,
+            lw=2,
+        )
+        ax.fill_between(
+            ks,
+            q1["inertia"].values,
+            q3["inertia"].values,
+            color=COLORS[algo],
+            alpha=0.12,
+        )
         ax.set_xlabel("Nombre de clusters (k)")
         ax.set_ylabel("Inertie")
         fig.tight_layout()
@@ -279,8 +338,15 @@ def generate_figures(csv_path: Path):
         q1 = sub.groupby("k")["silhouette"].quantile(0.25)
         q3 = sub.groupby("k")["silhouette"].quantile(0.75)
         ks = med.index.values
-        ax.plot(ks, med.values, color=COLORS[algo], marker="o", markersize=4,
-                lw=2, label=LABELS[algo])
+        ax.plot(
+            ks,
+            med.values,
+            color=COLORS[algo],
+            marker="o",
+            markersize=4,
+            lw=2,
+            label=LABELS[algo],
+        )
         ax.fill_between(ks, q1.values, q3.values, color=COLORS[algo], alpha=0.12)
 
     # Highlight optimal k per algo
@@ -290,21 +356,31 @@ def generate_figures(csv_path: Path):
         k_best = int(med.idxmax())
         sil_best = med.max()
         ax.axvline(k_best, color=COLORS[algo], ls="--", lw=1, alpha=0.5)
-        ax.annotate(f"k*={k_best} ({sil_best:.3f})",
-                    xy=(k_best, sil_best), xytext=(8, 10), textcoords="offset points",
-                    fontsize=9, fontweight="bold", color=COLORS[algo])
+        ax.annotate(
+            f"k*={k_best} ({sil_best:.3f})",
+            xy=(k_best, sil_best),
+            xytext=(8, 10),
+            textcoords="offset points",
+            fontsize=9,
+            fontweight="bold",
+            color=COLORS[algo],
+        )
 
     ax.set_xlabel("Nombre de clusters (k)")
     ax.set_ylabel("Score silhouette (médiane)")
     ax.legend(framealpha=0.8)
     fig.tight_layout()
-    fig.savefig(OUT_DIR / "fig_silhouette_vs_k.png", bbox_inches="tight", facecolor="white")
+    fig.savefig(
+        OUT_DIR / "fig_silhouette_vs_k.png", bbox_inches="tight", facecolor="white"
+    )
     plt.close(fig)
     print("  ✓ fig_silhouette_vs_k.png", flush=True)
 
     # --- Combined 4-panel ---
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle("Recherche du k optimal — KMeans vs KMedoids", fontweight="bold", y=1.01)
+    fig.suptitle(
+        "Recherche du k optimal — KMeans vs KMedoids", fontweight="bold", y=1.01
+    )
     metrics = [
         ("silhouette", "Score silhouette (↑)"),
         ("inertia", "Inertie (↓)"),
@@ -318,15 +394,24 @@ def generate_figures(csv_path: Path):
             q1 = sub.groupby("k")[col].quantile(0.25)
             q3 = sub.groupby("k")[col].quantile(0.75)
             ks = med.index.values
-            ax.plot(ks, med.values, color=COLORS[algo], marker="o", markersize=3,
-                    lw=1.8, label=LABELS[algo])
+            ax.plot(
+                ks,
+                med.values,
+                color=COLORS[algo],
+                marker="o",
+                markersize=3,
+                lw=1.8,
+                label=LABELS[algo],
+            )
             ax.fill_between(ks, q1.values, q3.values, color=COLORS[algo], alpha=0.1)
         ax.set_xlabel("k")
         ax.set_ylabel(ylabel)
         ax.legend(fontsize=8, framealpha=0.8)
 
     fig.tight_layout()
-    fig.savefig(OUT_DIR / "fig_combined_optimal_k.png", bbox_inches="tight", facecolor="white")
+    fig.savefig(
+        OUT_DIR / "fig_combined_optimal_k.png", bbox_inches="tight", facecolor="white"
+    )
     plt.close(fig)
     print("  ✓ fig_combined_optimal_k.png", flush=True)
 
@@ -336,16 +421,25 @@ def generate_figures(csv_path: Path):
 # ── CLI ──────────────────────────────────────────────────────────────────────
 def main():
     parser = argparse.ArgumentParser(description="Recherche du k optimal")
-    parser.add_argument("--n", type=int, default=5000,
-                        help="Nombre de segments à échantillonner (défaut: 5000)")
+    parser.add_argument(
+        "--n",
+        type=int,
+        default=5000,
+        help="Nombre de segments à échantillonner (défaut: 5000)",
+    )
     parser.add_argument("--k-min", type=int, default=2, help="k minimum (défaut: 2)")
     parser.add_argument("--k-max", type=int, default=50, help="k maximum (défaut: 50)")
-    parser.add_argument("--seeds", type=int, default=5,
-                        help="Nombre de seeds par k (défaut: 5)")
-    parser.add_argument("--quick", action="store_true",
-                        help="Mode rapide : N=3000, seeds=3, k=2..30")
-    parser.add_argument("--plot-only", action="store_true",
-                        help="Ne pas relancer le benchmark, juste regénérer les figures")
+    parser.add_argument(
+        "--seeds", type=int, default=5, help="Nombre de seeds par k (défaut: 5)"
+    )
+    parser.add_argument(
+        "--quick", action="store_true", help="Mode rapide : N=3000, seeds=3, k=2..30"
+    )
+    parser.add_argument(
+        "--plot-only",
+        action="store_true",
+        help="Ne pas relancer le benchmark, juste regénérer les figures",
+    )
     args = parser.parse_args()
 
     if args.plot_only:

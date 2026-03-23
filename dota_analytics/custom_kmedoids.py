@@ -32,8 +32,8 @@ class CustomKMedoids:
         self.random_state = random_state
 
         # Attributs résultats (remplis par fit())
-        self.labels_ = None           # shape (N,) : cluster de chaque point
-        self.medoid_indices_ = None   # shape (K,) : indices des K médoïdes
+        self.labels_ = None  # shape (N,) : cluster de chaque point
+        self.medoid_indices_ = None  # shape (K,) : indices des K médoïdes
 
     def fit(self, D: np.ndarray) -> "CustomKMedoids":
         """
@@ -57,7 +57,6 @@ class CustomKMedoids:
         medoids = rng.choice(N, size=self.n_clusters, replace=False)
 
         for iteration in range(self.max_iter):
-
             # ------------------------------------------------------------
             # ÉTAPE 2a — ASSIGNATION (vectorisée, O(N·K))
             # Pour chaque point i, on regarde sa distance à chacun des K
@@ -121,7 +120,7 @@ class CustomKMedoids:
         # labels_[i] = index local du cluster (0..K-1)
         # medoid_indices_[k] = index global du représentant du cluster k
         # ----------------------------------------------------------------
-        self.medoid_indices_ = medoids                      # shape (K,)
-        self.labels_ = np.argmin(D[:, medoids], axis=1)    # shape (N,)
+        self.medoid_indices_ = medoids  # shape (K,)
+        self.labels_ = np.argmin(D[:, medoids], axis=1)  # shape (N,)
 
         return self

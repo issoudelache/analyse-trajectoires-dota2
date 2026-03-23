@@ -20,6 +20,7 @@ sys.path.insert(0, str(PROJECT_ROOT))
 
 import numpy as np
 import matplotlib
+
 matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 from sklearn.cluster import MiniBatchKMeans
@@ -31,8 +32,8 @@ from mvc.config import COMPRESSED_DIR
 
 # ── Paramètres ─────────────────────────────────────────────────────────────
 K_RANGE = list(range(2, 21)) + list(range(25, 101, 5))  # 2..20 puis 25,30,...,100
-SAMPLE_SIZE = 5000       # Sous-échantillon pour garder un temps raisonnable
-MAX_FILES = 30           # Limiter le nombre de fichiers JSON chargés
+SAMPLE_SIZE = 5000  # Sous-échantillon pour garder un temps raisonnable
+MAX_FILES = 30  # Limiter le nombre de fichiers JSON chargés
 RANDOM_STATE = 42
 
 OUTPUT_DIR = PROJECT_ROOT / "output" / "benchmark_clustering"
@@ -99,9 +100,11 @@ for i, k in enumerate(K_RANGE, 1):
     inertias.append(inertia)
     silhouettes.append(sil)
 
-    print(f"  [{i:>2}/{len(K_RANGE)}]  k={k:<4}  "
-          f"Inertie={inertia:>12.1f}   Silhouette={sil:+.4f}   "
-          f"({elapsed:.2f}s)")
+    print(
+        f"  [{i:>2}/{len(K_RANGE)}]  k={k:<4}  "
+        f"Inertie={inertia:>12.1f}   Silhouette={sil:+.4f}   "
+        f"({elapsed:.2f}s)"
+    )
 
 t_total = time.perf_counter() - t_total_start
 print("-" * 65)
@@ -132,14 +135,30 @@ print(f"  ★ Meilleur Silhouette à k = {k_best_sil} ({silhouettes[best_sil_idx
 print(f"\n[4/4] Génération de la figure → {PLOT_PATH}")
 
 fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5.5))
-fig.suptitle("Recherche du nombre optimal de clusters (k) — KMeans",
-             fontsize=14, fontweight="bold", y=1.02)
+fig.suptitle(
+    "Recherche du nombre optimal de clusters (k) — KMeans",
+    fontsize=14,
+    fontweight="bold",
+    y=1.02,
+)
 
 # ── Subplot 1 : Méthode du Coude ──────────────────────────────────────────
-ax1.plot(K_RANGE, inertias, "o-", color="#2563EB", linewidth=1.8,
-         markersize=4, label="Inertie")
-ax1.axvline(k_elbow, color="#DC2626", linestyle="--", alpha=0.8,
-            label=f"Coude estimé (k={k_elbow})")
+ax1.plot(
+    K_RANGE,
+    inertias,
+    "o-",
+    color="#2563EB",
+    linewidth=1.8,
+    markersize=4,
+    label="Inertie",
+)
+ax1.axvline(
+    k_elbow,
+    color="#DC2626",
+    linestyle="--",
+    alpha=0.8,
+    label=f"Coude estimé (k={k_elbow})",
+)
 ax1.set_xlabel("Nombre de clusters (k)", fontsize=11)
 ax1.set_ylabel("Inertie", fontsize=11)
 ax1.set_title("Méthode du Coude", fontsize=12, fontweight="bold")
@@ -148,10 +167,22 @@ ax1.grid(True, alpha=0.3)
 ax1.tick_params(labelsize=9)
 
 # ── Subplot 2 : Score Silhouette ──────────────────────────────────────────
-ax2.plot(K_RANGE, silhouettes, "s-", color="#059669", linewidth=1.8,
-         markersize=4, label="Silhouette Score")
-ax2.axvline(k_best_sil, color="#DC2626", linestyle="--", alpha=0.8,
-            label=f"Meilleur k={k_best_sil} ({silhouettes[best_sil_idx]:.4f})")
+ax2.plot(
+    K_RANGE,
+    silhouettes,
+    "s-",
+    color="#059669",
+    linewidth=1.8,
+    markersize=4,
+    label="Silhouette Score",
+)
+ax2.axvline(
+    k_best_sil,
+    color="#DC2626",
+    linestyle="--",
+    alpha=0.8,
+    label=f"Meilleur k={k_best_sil} ({silhouettes[best_sil_idx]:.4f})",
+)
 ax2.set_xlabel("Nombre de clusters (k)", fontsize=11)
 ax2.set_ylabel("Silhouette Score", fontsize=11)
 ax2.set_title("Qualité des Clusters", fontsize=12, fontweight="bold")

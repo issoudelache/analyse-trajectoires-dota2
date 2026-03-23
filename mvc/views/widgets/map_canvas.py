@@ -51,10 +51,10 @@ class DotaMapCanvas(ctk.CTkFrame):
         self._raw_points_data: Dict[int, list] = {}
 
         # Cache de lignes pré-créées
-        self._lines: Dict[int, list] = {}       # pid -> [(x1,y1,x2,y2,s_tick,e_tick), ...]
-        self._line_ids: Dict[int, list] = {}    # pid -> [canvas_id, ...]
-        self._end_ticks: Dict[int, list] = {}   # pid -> [end_tick, ...] trié
-        self._vis_count: Dict[int, int] = {}    # pid -> nb lignes visibles
+        self._lines: Dict[int, list] = {}  # pid -> [(x1,y1,x2,y2,s_tick,e_tick), ...]
+        self._line_ids: Dict[int, list] = {}  # pid -> [canvas_id, ...]
+        self._end_ticks: Dict[int, list] = {}  # pid -> [end_tick, ...] trié
+        self._vis_count: Dict[int, int] = {}  # pid -> nb lignes visibles
         self._needs_rebuild = False
 
         # Head lines + dots
@@ -115,7 +115,11 @@ class DotaMapCanvas(ctk.CTkFrame):
             self.canvas.coords(self._bg_item, self._ox, self._oy)
         else:
             self._bg_item = self.canvas.create_image(
-                self._ox, self._oy, anchor="nw", image=self._bg_photo, tags="bg",
+                self._ox,
+                self._oy,
+                anchor="nw",
+                image=self._bg_photo,
+                tags="bg",
             )
         self.canvas.tag_lower("bg")
 
@@ -177,11 +181,16 @@ class DotaMapCanvas(ctk.CTkFrame):
             for pid, segs in self._segments_data.items():
                 lines = []
                 for seg in segs:
-                    lines.append((
-                        seg["start"]["x"], seg["start"]["y"],
-                        seg["end"]["x"], seg["end"]["y"],
-                        seg["start"]["tick"], seg["end"]["tick"],
-                    ))
+                    lines.append(
+                        (
+                            seg["start"]["x"],
+                            seg["start"]["y"],
+                            seg["end"]["x"],
+                            seg["end"]["y"],
+                            seg["start"]["tick"],
+                            seg["end"]["tick"],
+                        )
+                    )
                 lines.sort(key=lambda l: l[5])
                 source[pid] = lines
         elif self._draw_mode == "raw":
@@ -189,10 +198,16 @@ class DotaMapCanvas(ctk.CTkFrame):
                 lines = []
                 for i in range(len(pts) - 1):
                     p1, p2 = pts[i], pts[i + 1]
-                    lines.append((
-                        p1["x"], p1["y"], p2["x"], p2["y"],
-                        p1["tick"], p2["tick"],
-                    ))
+                    lines.append(
+                        (
+                            p1["x"],
+                            p1["y"],
+                            p2["x"],
+                            p2["y"],
+                            p1["tick"],
+                            p2["tick"],
+                        )
+                    )
                 source[pid] = lines
 
         # Pré-créer tous les items canvas comme cachés
@@ -203,16 +218,26 @@ class DotaMapCanvas(ctk.CTkFrame):
             ticks = []
             for x1, y1, x2, y2, s_tick, e_tick in lines:
                 cid = self.canvas.create_line(
-                    self._gx(x1), self._gy(y1),
-                    self._gx(x2), self._gy(y2),
-                    fill=color, width=2, state="hidden", tags="trail",
+                    self._gx(x1),
+                    self._gy(y1),
+                    self._gx(x2),
+                    self._gy(y2),
+                    fill=color,
+                    width=2,
+                    state="hidden",
+                    tags="trail",
                 )
                 ids.append(cid)
                 ticks.append(e_tick)
                 self._item_info[cid] = {
-                    "pid": pid, "name": PLAYER_NAMES[pid % 10],
-                    "s_tick": s_tick, "e_tick": e_tick,
-                    "x1": x1, "y1": y1, "x2": x2, "y2": y2,
+                    "pid": pid,
+                    "name": PLAYER_NAMES[pid % 10],
+                    "s_tick": s_tick,
+                    "e_tick": e_tick,
+                    "x1": x1,
+                    "y1": y1,
+                    "x2": x2,
+                    "y2": y2,
                 }
             self._line_ids[pid] = ids
             self._end_ticks[pid] = ticks
@@ -220,13 +245,27 @@ class DotaMapCanvas(ctk.CTkFrame):
 
             # Ligne d'interpolation (tête)
             self._head_ids[pid] = self.canvas.create_line(
-                0, 0, 0, 0, fill=color, width=2, state="hidden", tags="head",
+                0,
+                0,
+                0,
+                0,
+                fill=color,
+                width=2,
+                state="hidden",
+                tags="head",
             )
             # Dot de position
             if self._show_dots:
                 self._dot_ids[pid] = self.canvas.create_oval(
-                    0, 0, 0, 0, fill=color, outline="white", width=1,
-                    state="hidden", tags="dot",
+                    0,
+                    0,
+                    0,
+                    0,
+                    fill=color,
+                    outline="white",
+                    width=1,
+                    state="hidden",
+                    tags="dot",
                 )
 
         # Afficher jusqu'au tick courant
@@ -269,8 +308,11 @@ class DotaMapCanvas(ctk.CTkFrame):
                     iy = y1 + ratio * (y2 - y1)
                     if head:
                         self.canvas.coords(
-                            head, self._gx(x1), self._gy(y1),
-                            self._gx(ix), self._gy(iy),
+                            head,
+                            self._gx(x1),
+                            self._gy(y1),
+                            self._gx(ix),
+                            self._gy(iy),
                         )
                         self.canvas.itemconfigure(head, state="normal")
                     px, py = ix, iy
@@ -310,8 +352,10 @@ class DotaMapCanvas(ctk.CTkFrame):
             for i, (x1, y1, x2, y2, _st, _et) in enumerate(lines):
                 self.canvas.coords(
                     ids[i],
-                    self._gx(x1), self._gy(y1),
-                    self._gx(x2), self._gy(y2),
+                    self._gx(x1),
+                    self._gy(y1),
+                    self._gx(x2),
+                    self._gy(y2),
                 )
         self._update_heads_and_dots()
 
@@ -354,15 +398,25 @@ class DotaMapCanvas(ctk.CTkFrame):
     def _draw_tooltip(self, x, y, text):
         self.canvas.delete("tooltip")
         tid = self.canvas.create_text(
-            x + 6, y + 4, text=text, anchor="nw",
-            fill=TEXT_LIGHT, font=("Consolas", 9), tags="tooltip",
+            x + 6,
+            y + 4,
+            text=text,
+            anchor="nw",
+            fill=TEXT_LIGHT,
+            font=("Consolas", 9),
+            tags="tooltip",
         )
         bb = self.canvas.bbox(tid)
         if bb:
             p = 5
             self.canvas.create_rectangle(
-                bb[0] - p, bb[1] - p, bb[2] + p, bb[3] + p,
-                fill="#1a1a2eee", outline=TEXT_DIM, tags="tooltip",
+                bb[0] - p,
+                bb[1] - p,
+                bb[2] + p,
+                bb[3] + p,
+                fill="#1a1a2eee",
+                outline=TEXT_DIM,
+                tags="tooltip",
             )
             self.canvas.tag_raise(tid)
 
@@ -387,8 +441,13 @@ class DotaMapCanvas(ctk.CTkFrame):
         self._render_bg()
         for x1, y1, x2, y2, color in segments_list:
             self.canvas.create_line(
-                self._gx(x1), self._gy(y1), self._gx(x2), self._gy(y2),
-                fill=color, width=2, tags="trail",
+                self._gx(x1),
+                self._gy(y1),
+                self._gx(x2),
+                self._gy(y2),
+                fill=color,
+                width=2,
+                tags="trail",
             )
 
     # ── Stats helper ─────────────────────────────────────────────────────

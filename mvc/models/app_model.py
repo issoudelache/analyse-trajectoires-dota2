@@ -8,11 +8,9 @@ Le Controller appelle ces méthodes et transmet les résultats à la View.
 import json
 import logging
 from dataclasses import dataclass, field
-from multiprocessing import Pool, cpu_count
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
 
-import numpy as np
 import pandas as pd
 from PIL import Image
 
@@ -23,25 +21,24 @@ from mvc.config import (
     COMPRESSED_DIR,
     DATA_DIR,
     OUTPUT_DIR,
-    OVERLAYS_DIR,
-    VISUALIZATIONS_DIR,
 )
-from dota_analytics.clustering import load_data, run_clustering
-from dota_analytics.compression import MDLCompressor, process_full_match
+from dota_analytics.clustering import run_clustering
+from dota_analytics.compression import process_full_match
 from dota_analytics.plotting import PLAYER_COLORS
 from dota_analytics.plotting import (
-    get_available_games,
     get_available_w_errors,
     load_compressed_data,
 )
-from dota_analytics.structures import JSONExporter, Trajectory, TrajectoryPoint
+from dota_analytics.structures import JSONExporter
 
 logger = logging.getLogger(__name__)
 
 # ── Dossiers de données secondaires (compat) ────────────────────────────
 EXPORTED_DATA_MVC = BASE_DIR / "exported_data_mvc"
 COMPRESSED_SOURCES = (
-    [COMPRESSED_DIR, EXPORTED_DATA_MVC] if EXPORTED_DATA_MVC.exists() else [COMPRESSED_DIR]
+    [COMPRESSED_DIR, EXPORTED_DATA_MVC]
+    if EXPORTED_DATA_MVC.exists()
+    else [COMPRESSED_DIR]
 )
 
 
@@ -64,6 +61,7 @@ class CompressResult:
 @dataclass
 class OverlayData:
     """Données prêtes à dessiner sur le canvas."""
+
     canvas_image: Any  # PIL Image
     player_segments: Dict[int, list]
     min_tick: int = 0
@@ -75,6 +73,7 @@ class OverlayData:
 @dataclass
 class ClusterVisuData:
     """Données pour visualiser un cluster sur la carte."""
+
     canvas_image: Any
     segments: list  # Liste de (x1, y1, x2, y2, color)
     cluster_id: int = 0
@@ -84,13 +83,35 @@ class ClusterVisuData:
 @dataclass
 class ComparisonData:
     """Données pour la comparaison côte à côte brut vs compressé."""
+
     canvas_image: Any  # PIL Image
-    raw_points: Dict[int, list]       # {player_id: [{x, y, tick}, ...]}
+    raw_points: Dict[int, list]  # {player_id: [{x, y, tick}, ...]}
     compressed_segments: Dict[int, list]  # {player_id: [{start, end}, ...]}
     min_tick: int = 0
     max_tick: int = 0
     match_id: str = ""
     w_error: float = 0.0
+
+
+@dataclass
+class RecodeResult:
+    """Résultat du recodage des clusters en séquences."""
+
+    success: bool
+    num_sequences: int = 0
+    output_path: str = ""
+    error: str = ""
+
+
+@dataclass
+class MiningResult:
+    """Résultat de la fouille PrefixSpan."""
+
+    success: bool
+    num_patterns: int = 0
+    top_patterns: List[Tuple[Tuple[int, ...], int]] = field(default_factory=list)
+    output_path: str = ""
+    error: str = ""
 
 
 # ═══════════════════════════════════════════════════════════════════════════
@@ -181,12 +202,16 @@ class AppModel:
     # ── compression ──────────────────────────────────────────────────────
 
     @staticmethod
-    def _compress_one(csv_path: Path, w_error: float, output_base: Path) -> CompressResult:
+    def _compress_one(
+        csv_path: Path, w_error: float, output_base: Path
+    ) -> CompressResult:
         match_id = csv_path.stem.replace("coord_", "")
         try:
             df = pd.read_csv(csv_path)
             results = process_full_match(df, match_id, w_error=w_error)
-            total_orig = sum(len(df[f"x{i}"]) for i in range(10) if f"x{i}" in df.columns)
+            total_orig = sum(
+                len(df[f"x{i}"]) for i in range(10) if f"x{i}" in df.columns
+            )
             total_segments = sum(len(segs) for segs in results.values())
 
             out_dir = output_base / f"w_error_{w_error}"
@@ -198,7 +223,9 @@ class AppModel:
 
             size_kb = out_path.stat().st_size // 1024
             reduction = (1 - total_segments / total_orig) * 100 if total_orig > 0 else 0
-            return CompressResult(True, match_id, total_orig, total_segments, reduction, size_kb)
+            return CompressResult(
+                True, match_id, total_orig, total_segments, reduction, size_kb
+            )
         except Exception as e:
             return CompressResult(False, match_id, error=str(e))
 
@@ -258,7 +285,9 @@ class AppModel:
 
     # ── comparison brut vs compressé ─────────────────────────────────────
 
-    def load_comparison_data(self, w_error: float, match_id: str) -> Optional[ComparisonData]:
+    def load_comparison_data(
+        self, w_error: float, match_id: str
+    ) -> Optional[ComparisonData]:
         """Charge les données brutes (CSV) et compressées (JSON) pour comparaison."""
         json_path = self._find_compressed_file(w_error, match_id)
         if json_path is None:
@@ -323,7 +352,9 @@ class AppModel:
 
     # ── cluster visu data ────────────────────────────────────────────────
 
-    def load_cluster_visu_data(self, w_error: float, cluster_id: int) -> Optional[ClusterVisuData]:
+    def load_cluster_visu_data(
+        self, w_error: float, cluster_id: int
+    ) -> Optional[ClusterVisuData]:
         folder = self._resolve_w_error_folder(w_error)
         if folder is None:
             return None
@@ -358,8 +389,15 @@ class AppModel:
                 if player["player_id"] == pid and idx < len(player["segments"]):
                     s = player["segments"][idx]
                     color = PLAYER_COLORS[pid % len(PLAYER_COLORS)]
-                    drawn.append((s["start"]["x"], s["start"]["y"],
-                                  s["end"]["x"], s["end"]["y"], color))
+                    drawn.append(
+                        (
+                            s["start"]["x"],
+                            s["start"]["y"],
+                            s["end"]["x"],
+                            s["end"]["y"],
+                            color,
+                        )
+                    )
                     break
 
         canvas_img = self._load_canvas_image()
@@ -402,3 +440,191 @@ class AppModel:
             for label in segs_dict.values():
                 labels.add(int(label))
         return sorted(labels)
+
+    # ── recodage (séquences de clusters) ──────────────────────────────────
+
+    def run_recoding(self, w_error: float) -> RecodeResult:
+        """Recode les clusters en séquences au format SPMF."""
+        from dota_analytics.recoding import reconstruct_sequences, save_sequences_to_spmf
+
+        clusters_file = self._find_clusters_file(w_error)
+        if clusters_file is None:
+            return RecodeResult(
+                success=False, error=f"Fichier clusters introuvable pour w_error={w_error}"
+            )
+
+        try:
+            with open(clusters_file) as f:
+                match_clusters = json.load(f)
+
+            sequences = reconstruct_sequences(match_clusters)
+            spmf_path = OUTPUT_DIR / "sequences.spmf"
+            save_sequences_to_spmf(sequences, str(spmf_path))
+
+            return RecodeResult(
+                success=True,
+                num_sequences=len(sequences),
+                output_path=str(spmf_path),
+            )
+        except Exception as e:
+            return RecodeResult(success=False, error=str(e))
+
+    # ── PrefixSpan (fouille de motifs) ────────────────────────────────────
+
+    def run_mining(
+        self,
+        min_support: int = 10,
+        max_length: int = 8,
+        progress_callback=None,
+    ) -> MiningResult:
+        """Lance PrefixSpan sur le fichier sequences.spmf.
+
+        Args:
+            min_support: Support minimum pour les motifs
+            max_length: Longueur maximale des motifs
+            progress_callback: Callback (current, total, elapsed_sec, num_patterns)
+        """
+        from dota_analytics.mining import PrefixSpan
+
+        spmf_path = OUTPUT_DIR / "sequences.spmf"
+        if not spmf_path.exists():
+            return MiningResult(
+                success=False, error="Fichier sequences.spmf introuvable. Lancez d'abord le recodage."
+            )
+
+        try:
+            miner = PrefixSpan(min_support=min_support, max_length=max_length)
+            database = miner.load_spmf(str(spmf_path))
+
+            if not database:
+                return MiningResult(success=False, error="Base de donnees vide ou invalide")
+
+            # Mode séquentiel si callback GUI (pour avoir les mises à jour de progression)
+            # Mode parallèle sinon pour la vitesse
+            use_parallel = progress_callback is None
+            results = miner.mine(database, progress_callback=progress_callback, parallel=use_parallel)
+
+            # Sauvegarder les résultats
+            output_path = OUTPUT_DIR / "patterns.spmf"
+            miner.save_results_to_spmf(str(output_path))
+
+            # Tous les patterns triés par support décroissant
+            sorted_patterns = sorted(results.items(), key=lambda x: (-x[1], len(x[0])))
+
+            return MiningResult(
+                success=True,
+                num_patterns=len(results),
+                top_patterns=sorted_patterns,
+                output_path=str(output_path),
+            )
+        except Exception as e:
+            return MiningResult(success=False, error=str(e))
+
+    # ── Génération graphe de transitions ──────────────────────────────────
+
+    def generate_transition_graph(
+        self, patterns: List[Tuple[Tuple[int, ...], int]], min_len: int = 2
+    ) -> Tuple[bool, bytes, str]:
+        """Génère un graphe de transitions à partir des patterns PrefixSpan.
+
+        Returns:
+            (success, image_bytes, error_msg)
+        """
+        try:
+            import io
+            import matplotlib.pyplot as plt
+            import networkx as nx
+
+            # Filtrer les patterns
+            patterns_dict = {p[0]: p[1] for p in patterns if len(p[0]) >= min_len}
+
+            if not patterns_dict:
+                return False, b"", "Aucun motif de longueur suffisante"
+
+            G = nx.DiGraph()
+
+            for pattern, support in patterns_dict.items():
+                for i in range(len(pattern) - 1):
+                    source = pattern[i]
+                    target = pattern[i + 1]
+
+                    if G.has_edge(source, target):
+                        G[source][target]["weight"] += support
+                    else:
+                        G.add_edge(source, target, weight=support)
+
+            if len(G.nodes) == 0:
+                return False, b"", "Aucune transition trouvee"
+
+            # Calcul des tailles de noeuds
+            node_sizes = [
+                min(
+                    2500,
+                    250
+                    + 40 * G.in_degree(n, weight="weight")
+                    + 40 * G.out_degree(n, weight="weight"),
+                )
+                for n in G.nodes()
+            ]
+
+            edge_weights = [G[u][v]["weight"] for u, v in G.edges()]
+            max_weight = max(edge_weights) if edge_weights else 1
+            edge_widths = [1 + (w / max_weight) * 4 for w in edge_weights]
+            node_colors = [G.degree(n, weight="weight") for n in G.nodes()]
+
+            fig, ax = plt.subplots(figsize=(14, 10), facecolor="#1a1a2e")
+            ax.set_facecolor("#1a1a2e")
+
+            pos = nx.spring_layout(G, k=2.0, iterations=50, seed=42)
+
+            nx.draw_networkx_nodes(
+                G,
+                pos,
+                node_size=node_sizes,
+                node_color=node_colors,
+                cmap=plt.cm.YlOrRd,
+                edgecolors="white",
+                linewidths=1.5,
+                alpha=0.9,
+                ax=ax,
+            )
+
+            nx.draw_networkx_labels(
+                G, pos, font_size=11, font_weight="bold", font_color="white", ax=ax
+            )
+
+            nx.draw_networkx_edges(
+                G,
+                pos,
+                width=edge_widths,
+                edge_color=edge_weights,
+                edge_cmap=plt.cm.Blues,
+                arrowsize=20,
+                alpha=0.7,
+                connectionstyle="arc3,rad=0.12",
+                ax=ax,
+            )
+
+            ax.set_title(
+                "Graphe des Transitions entre Clusters",
+                fontsize=16,
+                fontweight="bold",
+                color="white",
+            )
+            ax.axis("off")
+
+            plt.tight_layout()
+
+            # Convertir en bytes
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=100, facecolor="#1a1a2e", bbox_inches="tight")
+            buf.seek(0)
+            image_bytes = buf.read()
+            plt.close(fig)
+
+            return True, image_bytes, ""
+
+        except ImportError as e:
+            return False, b"", f"Module manquant: {e}"
+        except Exception as e:
+            return False, b"", str(e)

@@ -10,12 +10,14 @@ from dota_analytics.structures import TrajectoryPoint, Segment, Trajectory
 
 # ── helpers ─────────────────────────────────────────────────────────────────
 
+
 def _pts(*coords):
     """Crée une liste de TrajectoryPoint à partir de (x, y, tick) tuples."""
     return [TrajectoryPoint(x=x, y=y, tick=t) for x, y, t in coords]
 
 
 # ── TrajectoryPoint ─────────────────────────────────────────────────────────
+
 
 class TestTrajectoryPoint:
     def test_to_array(self):
@@ -26,6 +28,7 @@ class TestTrajectoryPoint:
 
 
 # ── Segment ──────────────────────────────────────────────────────────────────
+
 
 class TestSegment:
     def test_length_345(self):
@@ -88,6 +91,7 @@ class TestSegment:
 
 # ── Trajectory ───────────────────────────────────────────────────────────────
 
+
 class TestTrajectory:
     def test_empty_raises(self):
         with pytest.raises(ValueError):
@@ -114,7 +118,11 @@ class TestTrajectory:
         assert t.total_distance() == pytest.approx(6.0)
 
     def test_total_distance_single_point(self):
-        t = Trajectory(_pts((5, 5, 0),))
+        t = Trajectory(
+            _pts(
+                (5, 5, 0),
+            )
+        )
         assert t.total_distance() == 0.0
 
     def test_duration(self):
@@ -130,9 +138,18 @@ class TestTrajectory:
         assert max_y == pytest.approx(7.0)
 
     def test_player_id_default(self):
-        t = Trajectory(_pts((0, 0, 0),))
+        t = Trajectory(
+            _pts(
+                (0, 0, 0),
+            )
+        )
         assert t.player_id == 0
 
     def test_player_id_custom(self):
-        t = Trajectory(_pts((0, 0, 0),), player_id=5)
+        t = Trajectory(
+            _pts(
+                (0, 0, 0),
+            ),
+            player_id=5,
+        )
         assert t.player_id == 5

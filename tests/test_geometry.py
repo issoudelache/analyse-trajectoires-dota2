@@ -9,6 +9,7 @@ from dota_analytics.geometry import GeometryUtils
 
 # ── euclidean_distance ───────────────────────────────────────────────────────
 
+
 class TestEuclideanDistance:
     def test_same_point(self):
         assert GeometryUtils.euclidean_distance((0, 0), (0, 0)) == 0.0
@@ -32,6 +33,7 @@ class TestEuclideanDistance:
 
 
 # ── perpendicular_distance ──────────────────────────────────────────────────
+
 
 class TestPerpendicularDistance:
     def test_point_on_line(self):
@@ -59,6 +61,7 @@ class TestPerpendicularDistance:
 
 
 # ── perpendicular_distances_vectorized ──────────────────────────────────────
+
 
 class TestVectorizedDistances:
     def test_single_point(self):
@@ -94,6 +97,7 @@ class TestVectorizedDistances:
 
 
 # ── angular_distance ────────────────────────────────────────────────────────
+
 
 class TestAngularDistance:
     def test_same_direction(self):

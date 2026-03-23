@@ -19,8 +19,10 @@ class StatsPanel(ctk.CTkFrame):
 
     def _build(self):
         ctk.CTkLabel(
-            self, text="Statistiques",
-            font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_LIGHT,
+            self,
+            text="Statistiques",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            text_color=TEXT_LIGHT,
         ).pack(pady=(8, 2), padx=8)
 
         metrics = [
@@ -32,12 +34,19 @@ class StatsPanel(ctk.CTkFrame):
             row = ctk.CTkFrame(self, fg_color="transparent")
             row.pack(fill="x", padx=10, pady=1)
             ctk.CTkLabel(
-                row, text=f"{label}:", font=ctk.CTkFont(size=9),
-                text_color=TEXT_DIM, width=85, anchor="w",
+                row,
+                text=f"{label}:",
+                font=ctk.CTkFont(size=9),
+                text_color=TEXT_DIM,
+                width=85,
+                anchor="w",
             ).pack(side="left")
             v = ctk.CTkLabel(
-                row, text="—", font=ctk.CTkFont(size=9, weight="bold"),
-                text_color=TEXT_LIGHT, anchor="w",
+                row,
+                text="—",
+                font=ctk.CTkFont(size=9, weight="bold"),
+                text_color=TEXT_LIGHT,
+                anchor="w",
             )
             v.pack(side="left")
             self._labels[key] = v
@@ -45,7 +54,8 @@ class StatsPanel(ctk.CTkFrame):
     def update_from(self, stats: dict):
         if "visible_segments" in stats:
             self._labels["segments"].configure(
-                text=f"{stats['visible_segments']} / {stats['total_segments']}")
+                text=f"{stats['visible_segments']} / {stats['total_segments']}"
+            )
         if "active_players" in stats:
             self._labels["players"].configure(text=str(stats["active_players"]))
         if "elapsed_sec" in stats:

@@ -160,9 +160,12 @@ def calculate_compression_rate(num_original: int, num_compressed: int) -> float:
 
 
 def _point_to_segment_dist(
-    px: float, py: float,
-    x1: float, y1: float,
-    x2: float, y2: float,
+    px: float,
+    py: float,
+    x1: float,
+    y1: float,
+    x2: float,
+    y2: float,
 ) -> float:
     """Distance d'un point (px, py) à un segment fini [(x1,y1)→(x2,y2)].
 
@@ -208,13 +211,16 @@ def rmse_segments_to_points(
     for pt in original_points:
         min_dist = min(
             _point_to_segment_dist(
-                pt.x, pt.y,
-                seg.start.x, seg.start.y,
-                seg.end.x, seg.end.y,
+                pt.x,
+                pt.y,
+                seg.start.x,
+                seg.start.y,
+                seg.end.x,
+                seg.end.y,
             )
             for seg in segments
         )
-        sq_errors.append(min_dist ** 2)
+        sq_errors.append(min_dist**2)
 
     return float(np.sqrt(np.mean(sq_errors)))
 
@@ -242,9 +248,12 @@ def hausdorff_distance(
     for pt in original_points:
         min_dist = min(
             _point_to_segment_dist(
-                pt.x, pt.y,
-                seg.start.x, seg.start.y,
-                seg.end.x, seg.end.y,
+                pt.x,
+                pt.y,
+                seg.start.x,
+                seg.start.y,
+                seg.end.x,
+                seg.end.y,
             )
             for seg in segments
         )
@@ -285,9 +294,7 @@ def stop_preservation_rate(
     for i in range(len(original_points) - 1):
         p_curr = original_points[i]
         p_next = original_points[i + 1]
-        dist = np.sqrt(
-            (p_next.x - p_curr.x) ** 2 + (p_next.y - p_curr.y) ** 2
-        )
+        dist = np.sqrt((p_next.x - p_curr.x) ** 2 + (p_next.y - p_curr.y) ** 2)
         if dist < speed_threshold:
             stop_ticks.add(p_curr.tick)
 

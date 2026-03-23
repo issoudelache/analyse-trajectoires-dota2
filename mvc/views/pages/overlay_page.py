@@ -26,21 +26,34 @@ class OverlayPage(BasePage):
         top.pack(fill="x", padx=10, pady=(10, 5))
         top.pack_propagate(False)
 
-        ctk.CTkLabel(top, text="w_error:", font=ctk.CTkFont(size=13)).pack(side="left", padx=(15, 5))
+        ctk.CTkLabel(top, text="w_error:", font=ctk.CTkFont(size=13)).pack(
+            side="left", padx=(15, 5)
+        )
         self.w_error_var = ctk.StringVar(value="12.0")
         self.w_error_combo = ctk.CTkComboBox(
-            top, variable=self.w_error_var, values=["12.0"], width=100,
+            top,
+            variable=self.w_error_var,
+            values=["12.0"],
+            width=100,
             command=self._on_w_error_change,
         )
         self.w_error_combo.pack(side="left", padx=5)
 
-        ctk.CTkLabel(top, text="Match:", font=ctk.CTkFont(size=13)).pack(side="left", padx=(20, 5))
+        ctk.CTkLabel(top, text="Match:", font=ctk.CTkFont(size=13)).pack(
+            side="left", padx=(20, 5)
+        )
         self.match_var = ctk.StringVar(value="—")
-        self.match_combo = ctk.CTkComboBox(top, variable=self.match_var, values=["—"], width=180)
+        self.match_combo = ctk.CTkComboBox(
+            top, variable=self.match_var, values=["—"], width=180
+        )
         self.match_combo.pack(side="left", padx=5)
 
         self.load_btn = ctk.CTkButton(
-            top, text="Charger", fg_color=ACCENT, hover_color="#c33750", command=self._on_load,
+            top,
+            text="Charger",
+            fg_color=ACCENT,
+            hover_color="#c33750",
+            command=self._on_load,
         )
         self.load_btn.pack(side="left", padx=15)
 
@@ -70,11 +83,18 @@ class OverlayPage(BasePage):
         slider_frame.pack(fill="x", padx=10, pady=(5, 10))
         slider_frame.pack_propagate(False)
 
-        ctk.CTkLabel(slider_frame, text="Temps:", font=ctk.CTkFont(size=12)).pack(side="left", padx=(15, 5))
-        self.tick_slider = ctk.CTkSlider(slider_frame, from_=0, to=1, command=self._on_slider)
+        ctk.CTkLabel(slider_frame, text="Temps:", font=ctk.CTkFont(size=12)).pack(
+            side="left", padx=(15, 5)
+        )
+        self.tick_slider = ctk.CTkSlider(
+            slider_frame, from_=0, to=1, command=self._on_slider
+        )
         self.tick_slider.pack(side="left", fill="x", expand=True, padx=10)
         self.tick_label = ctk.CTkLabel(
-            slider_frame, text="tick: 0", font=ctk.CTkFont(size=11), width=100,
+            slider_frame,
+            text="tick: 0",
+            font=ctk.CTkFont(size=11),
+            width=100,
         )
         self.tick_label.pack(side="right", padx=10)
 

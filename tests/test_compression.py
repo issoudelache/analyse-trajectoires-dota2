@@ -1,7 +1,5 @@
 """Tests unitaires pour dota_analytics.compression — MDLCompressor."""
 
-import numpy as np
-import pytest
 
 from dota_analytics.compression import MDLCompressor
 from dota_analytics.structures import TrajectoryPoint, Trajectory, Segment

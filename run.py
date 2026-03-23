@@ -15,7 +15,6 @@ Usage:
 
 import argparse
 import logging
-from pathlib import Path
 
 import matplotlib
 import pandas as pd
@@ -29,7 +28,7 @@ logging.basicConfig(
 from dota_analytics.clustering import run_clustering
 
 # Modules locaux
-from dota_analytics.compression import MDLCompressor, process_full_match
+from dota_analytics.compression import MDLCompressor
 from dota_analytics.plotting import (
     InteractiveOverlay,
     generate_comparison_image,
@@ -39,14 +38,12 @@ from dota_analytics.plotting import (
     plot_cluster_on_map,
     plot_markov_network,
 )
-from dota_analytics.structures import JSONExporter, Trajectory, TrajectoryPoint
+from dota_analytics.structures import Trajectory, TrajectoryPoint
 from mvc.config import (
-    BASE_DIR,
     CANVAS_PATH,
     CLUSTERS_DIR,
     COMPRESSED_DIR,
     DATA_DIR,
-    EXPORTED_DATA_MVC,
     OUTPUT_DIR,
     OVERLAYS_DIR,
     VISUALIZATIONS_DIR,
@@ -58,7 +55,6 @@ import json
 from multiprocessing import Pool, cpu_count
 
 import matplotlib.pyplot as plt
-import numpy as np
 
 # =============================================================================
 # COMMANDE: COMPRESS
@@ -627,6 +623,7 @@ def cmd_visu_cluster(args):
 # COMMANDE: RECODE
 # =============================================================================
 
+
 def cmd_recode(args):
     """Transforme les clusters en séquences SPMF pour PrefixSpan."""
     from dota_analytics.recoding import reconstruct_sequences, save_sequences_to_spmf
@@ -670,6 +667,7 @@ def cmd_recode(args):
 # COMMANDE: VISU NETWORK
 # =============================================================================
 
+
 def cmd_visu_network(args):
     """Lance PrefixSpan et visualise le résultat en Graphe NetworkX."""
     from dota_analytics.mining import PrefixSpan
@@ -696,7 +694,9 @@ def cmd_visu_network(args):
 
     miner = PrefixSpan(min_support=args.min_support, max_length=args.max_length)
     db = miner.load_spmf(str(spmf_path))
-    print(f"Base chargee ({len(db)} sequences). Min Support = {args.min_support}, Max Length = {args.max_length}")
+    print(
+        f"Base chargee ({len(db)} sequences). Min Support = {args.min_support}, Max Length = {args.max_length}"
+    )
 
     if len(db) == 0:
         print("Base de sequences vide. Verifiez le fichier sequences.spmf")
@@ -706,12 +706,15 @@ def cmd_visu_network(args):
     print(f"{len(results)} motifs trouves.")
 
     if len(results) == 0:
-        print(f"Aucun motif avec min_support={args.min_support}. Essayez une valeur plus basse.")
+        print(
+            f"Aucun motif avec min_support={args.min_support}. Essayez une valeur plus basse."
+        )
         return
 
     # Sauvegarde du graphe dans output/ ET affichage si backend graphique dispo
     output_graph_path = str(OUTPUT_DIR / "markov_network.png")
     plot_markov_network(results, min_len=args.min_len, output_path=output_graph_path)
+
 
 # =============================================================================
 # MAIN
@@ -835,43 +838,75 @@ Exemples:
         help="Algorithme a utiliser ('affinity', 'kmeans' ou 'kmedoids')",
     )
     parser_cluster.add_argument(
-        "--min_length", type=float, default=5.0,
+        "--min_length",
+        type=float,
+        default=5.0,
         help="Longueur minimale des segments inclus dans le clustering (defaut: 5.0)",
     )
     parser_cluster.add_argument(
-        "--n_clusters", type=int, default=50,
+        "--n_clusters",
+        type=int,
+        default=50,
         help="Nombre de clusters pour KMeans/KMedoids (defaut: 50)",
     )
     parser_cluster.add_argument(
-        "--damping", type=float, default=0.9,
+        "--damping",
+        type=float,
+        default=0.9,
         help="Facteur d'amortissement pour Affinity Propagation (defaut: 0.9)",
     )
     parser_cluster.add_argument(
-        "--max_iter", type=int, default=400,
+        "--max_iter",
+        type=int,
+        default=400,
         help="Nombre max d'iterations pour AP/KMedoids (defaut: 400)",
     )
     parser_cluster.add_argument(
-        "--w_perp", type=float, default=1.0,
+        "--w_perp",
+        type=float,
+        default=1.0,
         help="Poids de la composante perpendiculaire TRACLUS (defaut: 1.0)",
     )
     parser_cluster.add_argument(
-        "--w_angle", type=float, default=1.0,
+        "--w_angle",
+        type=float,
+        default=1.0,
         help="Poids de la composante angulaire TRACLUS (defaut: 1.0)",
     )
     parser_cluster.add_argument(
-        "--w_par", type=float, default=1.0,
+        "--w_par",
+        type=float,
+        default=1.0,
         help="Poids de la composante parallele TRACLUS (defaut: 1.0)",
     )
 
     # RECODE
-    parser_recode = subparsers.add_parser("recode", help="Recoder les clusters en format SPMF")
-    parser_recode.add_argument("--w_error", type=float, required=True, help="Paramètre de compression utilisé")
+    parser_recode = subparsers.add_parser(
+        "recode", help="Recoder les clusters en format SPMF"
+    )
+    parser_recode.add_argument(
+        "--w_error", type=float, required=True, help="Paramètre de compression utilisé"
+    )
 
     # VISU-NETWORK
-    parser_network = subparsers.add_parser("visu_network", help="Visualiser les routes fréquentes en graphe")
-    parser_network.add_argument("--min_support", type=int, default=10, help="Support minimal des motifs")
-    parser_network.add_argument("--max_length", type=int, default=8, help="Longueur maximale des motifs (defaut: 8)")
-    parser_network.add_argument("--min_len", type=int, default=2, help="Taille minimale des motifs affiches dans le graphe (defaut: 2)")
+    parser_network = subparsers.add_parser(
+        "visu_network", help="Visualiser les routes fréquentes en graphe"
+    )
+    parser_network.add_argument(
+        "--min_support", type=int, default=10, help="Support minimal des motifs"
+    )
+    parser_network.add_argument(
+        "--max_length",
+        type=int,
+        default=8,
+        help="Longueur maximale des motifs (defaut: 8)",
+    )
+    parser_network.add_argument(
+        "--min_len",
+        type=int,
+        default=2,
+        help="Taille minimale des motifs affiches dans le graphe (defaut: 2)",
+    )
 
     # VISU-CLUSTER
     parser_visu_clust = subparsers.add_parser(

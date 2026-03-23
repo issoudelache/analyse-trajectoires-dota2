@@ -31,30 +31,47 @@ class ComparisonPage(BasePage):
         top.pack(fill="x", padx=10, pady=(10, 5))
         top.pack_propagate(False)
 
-        ctk.CTkLabel(top, text="w_error:", font=ctk.CTkFont(size=13)).pack(side="left", padx=(15, 5))
+        ctk.CTkLabel(top, text="w_error:", font=ctk.CTkFont(size=13)).pack(
+            side="left", padx=(15, 5)
+        )
         self.w_error_var = ctk.StringVar(value="12.0")
         self.w_error_combo = ctk.CTkComboBox(
-            top, variable=self.w_error_var, values=["12.0"], width=100,
+            top,
+            variable=self.w_error_var,
+            values=["12.0"],
+            width=100,
             command=self._on_w_error_change,
         )
         self.w_error_combo.pack(side="left", padx=5)
 
-        ctk.CTkLabel(top, text="Match:", font=ctk.CTkFont(size=13)).pack(side="left", padx=(20, 5))
+        ctk.CTkLabel(top, text="Match:", font=ctk.CTkFont(size=13)).pack(
+            side="left", padx=(20, 5)
+        )
         self.match_var = ctk.StringVar(value="—")
-        self.match_combo = ctk.CTkComboBox(top, variable=self.match_var, values=["—"], width=180)
+        self.match_combo = ctk.CTkComboBox(
+            top, variable=self.match_var, values=["—"], width=180
+        )
         self.match_combo.pack(side="left", padx=5)
 
         self.load_btn = ctk.CTkButton(
-            top, text="Charger", fg_color=ACCENT, hover_color="#c33750", command=self._on_load,
+            top,
+            text="Charger",
+            fg_color=ACCENT,
+            hover_color="#c33750",
+            command=self._on_load,
         )
         self.load_btn.pack(side="left", padx=15)
 
         # Sélecteur de vitesse
-        ctk.CTkLabel(top, text="Vitesse:", font=ctk.CTkFont(size=13)).pack(side="left", padx=(15, 5))
+        ctk.CTkLabel(top, text="Vitesse:", font=ctk.CTkFont(size=13)).pack(
+            side="left", padx=(15, 5)
+        )
         self.speed_var = ctk.StringVar(value="×1")
         speed_menu = ctk.CTkOptionMenu(
-            top, variable=self.speed_var,
-            values=list(self._SPEED_MAP.keys()), width=70,
+            top,
+            variable=self.speed_var,
+            values=list(self._SPEED_MAP.keys()),
+            width=70,
             command=self._on_speed_change,
         )
         speed_menu.pack(side="left", padx=5)
@@ -65,23 +82,31 @@ class ComparisonPage(BasePage):
         legend_bar.pack_propagate(False)
 
         ctk.CTkLabel(
-            legend_bar, text="Radiant:", font=ctk.CTkFont(size=9, weight="bold"),
+            legend_bar,
+            text="Radiant:",
+            font=ctk.CTkFont(size=9, weight="bold"),
             text_color="#3498db",
         ).pack(side="left", padx=(10, 4))
         for i in range(5):
             ctk.CTkLabel(
-                legend_bar, text=f"● J{i+1}",
-                font=ctk.CTkFont(size=9), text_color=PLAYER_COLORS[i],
+                legend_bar,
+                text=f"● J{i + 1}",
+                font=ctk.CTkFont(size=9),
+                text_color=PLAYER_COLORS[i],
             ).pack(side="left", padx=2)
 
         ctk.CTkLabel(
-            legend_bar, text="  Dire:", font=ctk.CTkFont(size=9, weight="bold"),
+            legend_bar,
+            text="  Dire:",
+            font=ctk.CTkFont(size=9, weight="bold"),
             text_color="#e74c3c",
         ).pack(side="left", padx=(12, 4))
         for i in range(5, 10):
             ctk.CTkLabel(
-                legend_bar, text=f"● J{i-4}",
-                font=ctk.CTkFont(size=9), text_color=PLAYER_COLORS[i],
+                legend_bar,
+                text=f"● J{i - 4}",
+                font=ctk.CTkFont(size=9),
+                text_color=PLAYER_COLORS[i],
             ).pack(side="left", padx=2)
 
         # ── Zone des deux cartes ─────────────────────────────────────────
@@ -92,11 +117,15 @@ class ComparisonPage(BasePage):
         maps_frame.rowconfigure(1, weight=1)
 
         ctk.CTkLabel(
-            maps_frame, text="Brut (CSV)", font=ctk.CTkFont(size=14, weight="bold"),
+            maps_frame,
+            text="Brut (CSV)",
+            font=ctk.CTkFont(size=14, weight="bold"),
             text_color=TEXT_LIGHT,
         ).grid(row=0, column=0, pady=(0, 1))
         ctk.CTkLabel(
-            maps_frame, text="Compressé", font=ctk.CTkFont(size=14, weight="bold"),
+            maps_frame,
+            text="Compressé",
+            font=ctk.CTkFont(size=14, weight="bold"),
             text_color=TEXT_LIGHT,
         ).grid(row=0, column=1, pady=(0, 1))
 
@@ -112,16 +141,25 @@ class ComparisonPage(BasePage):
         controls.pack_propagate(False)
 
         self.play_btn = ctk.CTkButton(
-            controls, text="▶  Play", width=100,
-            fg_color=ACCENT, hover_color="#c33750", command=self._toggle_play,
+            controls,
+            text="▶  Play",
+            width=100,
+            fg_color=ACCENT,
+            hover_color="#c33750",
+            command=self._toggle_play,
         )
         self.play_btn.pack(side="left", padx=(15, 10))
 
-        self.tick_slider = ctk.CTkSlider(controls, from_=0, to=1, command=self._on_slider)
+        self.tick_slider = ctk.CTkSlider(
+            controls, from_=0, to=1, command=self._on_slider
+        )
         self.tick_slider.pack(side="left", fill="x", expand=True, padx=10)
 
         self.tick_label = ctk.CTkLabel(
-            controls, text="tick: 0", font=ctk.CTkFont(size=11), width=110,
+            controls,
+            text="tick: 0",
+            font=ctk.CTkFont(size=11),
+            width=110,
         )
         self.tick_label.pack(side="right", padx=10)
 
@@ -131,22 +169,34 @@ class ComparisonPage(BasePage):
         stats_bar.pack_propagate(False)
 
         self._stat_raw = ctk.CTkLabel(
-            stats_bar, text="Brut: — segments", font=ctk.CTkFont(size=10), text_color=TEXT_DIM,
+            stats_bar,
+            text="Brut: — segments",
+            font=ctk.CTkFont(size=10),
+            text_color=TEXT_DIM,
         )
         self._stat_raw.pack(side="left", padx=15)
 
         self._stat_comp = ctk.CTkLabel(
-            stats_bar, text="Compressé: — segments", font=ctk.CTkFont(size=10), text_color=TEXT_DIM,
+            stats_bar,
+            text="Compressé: — segments",
+            font=ctk.CTkFont(size=10),
+            text_color=TEXT_DIM,
         )
         self._stat_comp.pack(side="left", padx=15)
 
         self._stat_time = ctk.CTkLabel(
-            stats_bar, text="Temps: 00:00", font=ctk.CTkFont(size=10), text_color=TEXT_DIM,
+            stats_bar,
+            text="Temps: 00:00",
+            font=ctk.CTkFont(size=10),
+            text_color=TEXT_DIM,
         )
         self._stat_time.pack(side="right", padx=15)
 
         self._stat_players = ctk.CTkLabel(
-            stats_bar, text="Joueurs actifs: 0", font=ctk.CTkFont(size=10), text_color=TEXT_DIM,
+            stats_bar,
+            text="Joueurs actifs: 0",
+            font=ctk.CTkFont(size=10),
+            text_color=TEXT_DIM,
         )
         self._stat_players.pack(side="right", padx=15)
 
@@ -200,7 +250,9 @@ class ComparisonPage(BasePage):
         self.map_raw.set_raw_points(data.raw_points, data.min_tick, data.max_tick)
 
         self.map_compressed.set_background(data.canvas_image)
-        self.map_compressed.set_segments(data.compressed_segments, data.min_tick, data.max_tick)
+        self.map_compressed.set_segments(
+            data.compressed_segments, data.min_tick, data.max_tick
+        )
 
         self.tick_slider.configure(from_=data.min_tick, to=data.max_tick)
         self.tick_slider.set(data.min_tick)
@@ -260,9 +312,11 @@ class ComparisonPage(BasePage):
         sr = self.map_raw.get_stats()
         sc = self.map_compressed.get_stats()
         self._stat_raw.configure(
-            text=f"Brut: {sr['visible_segments']}/{sr['total_segments']} segments")
+            text=f"Brut: {sr['visible_segments']}/{sr['total_segments']} segments"
+        )
         self._stat_comp.configure(
-            text=f"Compressé: {sc['visible_segments']}/{sc['total_segments']} segments")
+            text=f"Compressé: {sc['visible_segments']}/{sc['total_segments']} segments"
+        )
         self._stat_players.configure(text=f"Joueurs actifs: {sr['active_players']}")
         m, s = divmod(int(sr["elapsed_sec"]), 60)
         self._stat_time.configure(text=f"Temps: {m:02d}:{s:02d}")

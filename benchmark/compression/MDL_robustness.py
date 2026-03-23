@@ -92,9 +92,11 @@ TRIPTYCH_DIR = BASE_DIR / "output" / "bruit_gaussien"
 # STRUCTURES DE DONNÉES
 # =============================================================================
 
+
 @dataclass
 class BenchmarkResult:
     """Resultat d'un test individuel (mode advanced)."""
+
     w_error: float
     sigma: float
     sample_id: int
@@ -108,6 +110,7 @@ class BenchmarkResult:
 # =============================================================================
 # CHARGEMENT
 # =============================================================================
+
 
 def load_trajectory_window(
     csv_path: Path, player_id: int, tick_start: int, tick_end: int
@@ -154,7 +157,9 @@ def get_random_samples(
         max_start = tick_max - duration_ticks
         for _ in range(10):
             start = random.randint(tick_min, max_start)
-            pts = [p for p in trajectory.points if start <= p.tick < start + duration_ticks]
+            pts = [
+                p for p in trajectory.points if start <= p.tick < start + duration_ticks
+            ]
             if len(pts) >= 10:
                 samples.append(Trajectory(points=pts))
                 break
@@ -168,6 +173,7 @@ def get_random_samples(
 # =============================================================================
 # METRIQUES (locales au script de robustesse)
 # =============================================================================
+
 
 def calculate_rmse(
     original_points: List[TrajectoryPoint], segments: List[Segment]
@@ -230,6 +236,7 @@ def calculate_segment_stability(nb_clean: int, nb_noisy: int) -> float:
 # VISUALISATION — TRIPTYQUE (helper batch pour run_full)
 # =============================================================================
 
+
 def _generate_triptych_image(
     original_points, noisy_points, segments, w_error, sigma, output_path
 ):
@@ -243,27 +250,57 @@ def _generate_triptych_image(
     fig.suptitle(
         f"Robustesse MDL : w_error={w_error}, sigma={sigma:.1f}  |  "
         f"Match {MATCH_ID} - Joueur {PLAYER_ID}",
-        fontsize=14, fontweight="bold", y=0.98,
+        fontsize=14,
+        fontweight="bold",
+        y=0.98,
     )
 
     ax = axes[0]
-    ax.plot(x_c, y_c, color="blue", linewidth=1.5, alpha=0.8,
-            marker="o", markersize=4, markerfacecolor="blue",
-            markeredgecolor="darkblue", markeredgewidth=0.5)
-    ax.set_title("1. Trajectoire Originale (Clean)", fontsize=13, fontweight="bold", pad=10)
-    ax.set_xlabel("X"); ax.set_ylabel("Y")
+    ax.plot(
+        x_c,
+        y_c,
+        color="blue",
+        linewidth=1.5,
+        alpha=0.8,
+        marker="o",
+        markersize=4,
+        markerfacecolor="blue",
+        markeredgecolor="darkblue",
+        markeredgewidth=0.5,
+    )
+    ax.set_title(
+        "1. Trajectoire Originale (Clean)", fontsize=13, fontweight="bold", pad=10
+    )
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
     ax.grid(True, alpha=0.3, linestyle="--")
-    ax.set_aspect("equal"); ax.set_facecolor("#f9f9ff")
+    ax.set_aspect("equal")
+    ax.set_facecolor("#f9f9ff")
 
     ax = axes[1]
     ax.plot(x_n, y_n, color="gray", linewidth=0.8, alpha=0.5)
-    ax.plot(x_n, y_n, color="gray", marker="x", linewidth=0,
-            markersize=6, markeredgewidth=1.5, alpha=0.7)
-    ax.set_title(f"2. Injection de Bruit (sigma={sigma:.1f})", fontsize=13,
-                 fontweight="bold", pad=10, color="darkred")
-    ax.set_xlabel("X"); ax.set_ylabel("Y")
+    ax.plot(
+        x_n,
+        y_n,
+        color="gray",
+        marker="x",
+        linewidth=0,
+        markersize=6,
+        markeredgewidth=1.5,
+        alpha=0.7,
+    )
+    ax.set_title(
+        f"2. Injection de Bruit (sigma={sigma:.1f})",
+        fontsize=13,
+        fontweight="bold",
+        pad=10,
+        color="darkred",
+    )
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
     ax.grid(True, alpha=0.3, linestyle="--")
-    ax.set_aspect("equal"); ax.set_facecolor("#fff9f9")
+    ax.set_aspect("equal")
+    ax.set_facecolor("#fff9f9")
 
     ax = axes[2]
     ax.plot(x_n, y_n, color="lightgray", linewidth=0.6, alpha=0.4, zorder=1)
@@ -271,13 +308,28 @@ def _generate_triptych_image(
         xs = [seg.start.x, seg.end.x]
         ys = [seg.start.y, seg.end.y]
         ax.plot(xs, ys, color="red", linewidth=2.5, alpha=0.9, zorder=10)
-        ax.plot(xs, ys, "o", color="red", markersize=8,
-                markeredgecolor="darkred", markeredgewidth=1.5, zorder=11)
-    ax.set_title(f"3. Resultat MDL (w={w_error})", fontsize=13,
-                 fontweight="bold", pad=10, color="darkgreen")
-    ax.set_xlabel("X"); ax.set_ylabel("Y")
+        ax.plot(
+            xs,
+            ys,
+            "o",
+            color="red",
+            markersize=8,
+            markeredgecolor="darkred",
+            markeredgewidth=1.5,
+            zorder=11,
+        )
+    ax.set_title(
+        f"3. Resultat MDL (w={w_error})",
+        fontsize=13,
+        fontweight="bold",
+        pad=10,
+        color="darkgreen",
+    )
+    ax.set_xlabel("X")
+    ax.set_ylabel("Y")
     ax.grid(True, alpha=0.3, linestyle="--")
-    ax.set_aspect("equal"); ax.set_facecolor("#f9fff9")
+    ax.set_aspect("equal")
+    ax.set_facecolor("#f9fff9")
 
     all_x, all_y = x_c + x_n, y_c + y_n
     xmn, xmx = min(all_x), max(all_x)
@@ -297,6 +349,7 @@ def _generate_triptych_image(
 # MODE FULL — Benchmark exhaustif parallèle
 # =============================================================================
 
+
 def _worker_full(args):
     """Worker multiprocessing pour un test (w_error, sigma)."""
     w_error, sigma, original_points, image_type = args
@@ -311,14 +364,20 @@ def _worker_full(args):
     if image_type == "var_w":
         w_str = str(int(w_error)) if w_error == int(w_error) else str(w_error)
         path = IMAGES_VAR_W_DIR / f"w{w_str}_sigma{FIXED_SIGMA_FOR_W_VARIATION}.png"
-        _generate_triptych_image(original_points, noisy_points, segments, w_error, sigma, path)
+        _generate_triptych_image(
+            original_points, noisy_points, segments, w_error, sigma, path
+        )
     elif image_type == "var_sigma":
         s_str = str(int(sigma)) if sigma == int(sigma) else str(sigma)
         path = IMAGES_VAR_SIGMA_DIR / f"w{FIXED_W_FOR_SIGMA_VARIATION}_sigma{s_str}.png"
-        _generate_triptych_image(original_points, noisy_points, segments, w_error, sigma, path)
+        _generate_triptych_image(
+            original_points, noisy_points, segments, w_error, sigma, path
+        )
 
     return {
-        "w_error": w_error, "sigma": sigma, "nb_segments": nb_seg,
+        "w_error": w_error,
+        "sigma": sigma,
+        "nb_segments": nb_seg,
         "rmse": rmse,
         "compression_ratio": (1 - nb_seg / len(original_points)) * 100,
         "nb_original_points": len(original_points),
@@ -332,12 +391,24 @@ def _generate_synthesis_plots(df: pd.DataFrame):
     fig, ax = plt.subplots(figsize=(12, 7))
     for idx, w in enumerate(W_ERROR_VALUES_FULL):
         dw = df[df["w_error"] == w]
-        ax.plot(dw["sigma"], dw["rmse"], marker="o", linewidth=2, markersize=5,
-                label=f"w={w}", alpha=0.8, color=colors[idx])
+        ax.plot(
+            dw["sigma"],
+            dw["rmse"],
+            marker="o",
+            linewidth=2,
+            markersize=5,
+            label=f"w={w}",
+            alpha=0.8,
+            color=colors[idx],
+        )
     ax.set_xlabel("Niveau de Bruit (sigma)", fontsize=13, fontweight="bold")
     ax.set_ylabel("RMSE", fontsize=13, fontweight="bold")
-    ax.set_title("Resistance au Bruit : RMSE vs Sigma", fontsize=15, fontweight="bold", pad=15)
-    ax.legend(title="w_error", fontsize=9, title_fontsize=10, loc="upper left", framealpha=0.9)
+    ax.set_title(
+        "Resistance au Bruit : RMSE vs Sigma", fontsize=15, fontweight="bold", pad=15
+    )
+    ax.legend(
+        title="w_error", fontsize=9, title_fontsize=10, loc="upper left", framealpha=0.9
+    )
     ax.grid(True, alpha=0.3, linestyle="--")
     plt.tight_layout()
     p = STATS_DIR / "resistance_au_bruit.png"
@@ -348,17 +419,39 @@ def _generate_synthesis_plots(df: pd.DataFrame):
     fig, ax = plt.subplots(figsize=(12, 7))
     for idx, w in enumerate(W_ERROR_VALUES_FULL):
         dw = df[df["w_error"] == w]
-        ax.plot(dw["sigma"], dw["nb_segments"], marker="s", linewidth=2, markersize=5,
-                label=f"w={w}", alpha=0.8, color=colors[idx])
+        ax.plot(
+            dw["sigma"],
+            dw["nb_segments"],
+            marker="s",
+            linewidth=2,
+            markersize=5,
+            label=f"w={w}",
+            alpha=0.8,
+            color=colors[idx],
+        )
     ax.set_xlabel("Niveau de Bruit (sigma)", fontsize=13, fontweight="bold")
     ax.set_ylabel("Nombre de Segments", fontsize=13, fontweight="bold")
-    ax.set_title("Efficacite de Compression : Segments vs Sigma", fontsize=15, fontweight="bold", pad=15)
-    ax.legend(title="w_error", fontsize=9, title_fontsize=10, loc="upper left", framealpha=0.9)
+    ax.set_title(
+        "Efficacite de Compression : Segments vs Sigma",
+        fontsize=15,
+        fontweight="bold",
+        pad=15,
+    )
+    ax.legend(
+        title="w_error", fontsize=9, title_fontsize=10, loc="upper left", framealpha=0.9
+    )
     ax.grid(True, alpha=0.3, linestyle="--")
     nb_orig = df["nb_original_points"].iloc[0]
     ax.axhline(y=nb_orig, color="orange", linestyle=":", linewidth=2, alpha=0.7)
-    ax.text(df["sigma"].max() * 0.95, nb_orig * 1.02,
-            f"Original: {nb_orig} pts", ha="right", va="bottom", fontsize=10, color="orange")
+    ax.text(
+        df["sigma"].max() * 0.95,
+        nb_orig * 1.02,
+        f"Original: {nb_orig} pts",
+        ha="right",
+        va="bottom",
+        fontsize=10,
+        color="orange",
+    )
     plt.tight_layout()
     p = STATS_DIR / "efficacite_compression.png"
     fig.savefig(p, dpi=200, bbox_inches="tight", facecolor="white")
@@ -367,8 +460,13 @@ def _generate_synthesis_plots(df: pd.DataFrame):
 
     fig, ax = plt.subplots(figsize=(14, 8))
     pivot = df.pivot(index="w_error", columns="sigma", values="rmse")
-    im = ax.imshow(pivot.values, cmap="YlOrRd", aspect="auto",
-                   interpolation="nearest", origin="lower")
+    im = ax.imshow(
+        pivot.values,
+        cmap="YlOrRd",
+        aspect="auto",
+        interpolation="nearest",
+        origin="lower",
+    )
     plt.colorbar(im, ax=ax).set_label("RMSE", fontsize=12)
     ax.set_xticks(np.arange(len(pivot.columns)))
     ax.set_yticks(np.arange(len(pivot.index)))
@@ -376,7 +474,12 @@ def _generate_synthesis_plots(df: pd.DataFrame):
     ax.set_yticklabels([f"{w}" for w in pivot.index])
     ax.set_xlabel("Niveau de Bruit (sigma)", fontsize=13, fontweight="bold")
     ax.set_ylabel("Parametre MDL (w_error)", fontsize=13, fontweight="bold")
-    ax.set_title("Carte de Chaleur : RMSE (w_error x sigma)", fontsize=15, fontweight="bold", pad=15)
+    ax.set_title(
+        "Carte de Chaleur : RMSE (w_error x sigma)",
+        fontsize=15,
+        fontweight="bold",
+        pad=15,
+    )
     plt.tight_layout()
     p = STATS_DIR / "heatmap_rmse.png"
     fig.savefig(p, dpi=200, bbox_inches="tight", facecolor="white")
@@ -391,7 +494,9 @@ def run_full():
     print("=" * 80)
     total = len(W_ERROR_VALUES_FULL) * len(SIGMA_VALUES_FULL)
     print(f"Match: {MATCH_ID} | Joueur: {PLAYER_ID} | Ticks: {TICK_START}-{TICK_END}")
-    print(f"w_error: {len(W_ERROR_VALUES_FULL)} valeurs | sigma: {len(SIGMA_VALUES_FULL)} valeurs")
+    print(
+        f"w_error: {len(W_ERROR_VALUES_FULL)} valeurs | sigma: {len(SIGMA_VALUES_FULL)} valeurs"
+    )
     print(f"Total tests: {total}")
     print()
 
@@ -423,13 +528,13 @@ def run_full():
     batch_size = num_workers * 2
     with Pool(processes=num_workers) as pool:
         for i in range(0, len(tasks), batch_size):
-            batch = tasks[i: i + batch_size]
+            batch = tasks[i : i + batch_size]
             batch_results = pool.map(_worker_full, batch)
             results.extend(batch_results)
             done = i + len(batch)
             last = batch_results[-1]
             print(
-                f"   [{done}/{len(tasks)}] {done/len(tasks)*100:.1f}% | "
+                f"   [{done}/{len(tasks)}] {done / len(tasks) * 100:.1f}% | "
                 f"w={last['w_error']:.1f} sigma={last['sigma']:.1f} | "
                 f"RMSE={last['rmse']:.2f} Seg={last['nb_segments']}"
             )
@@ -439,8 +544,10 @@ def run_full():
     csv_out = STATS_DIR / "full_benchmark_results.csv"
     df.to_csv(csv_out, index=False)
     print(f"CSV -> {csv_out}")
-    print(f"RMSE={df['rmse'].mean():.2f} | Segments={df['nb_segments'].mean():.1f} | "
-          f"Compression={df['compression_ratio'].mean():.1f}%")
+    print(
+        f"RMSE={df['rmse'].mean():.2f} | Segments={df['nb_segments'].mean():.1f} | "
+        f"Compression={df['compression_ratio'].mean():.1f}%"
+    )
 
     print("\nGeneration graphiques de synthese...")
     _generate_synthesis_plots(df)
@@ -451,17 +558,23 @@ def run_full():
 # MODE ADVANCED — Benchmark statistique (Data Augmentation + Heatmaps)
 # =============================================================================
 
+
 def _run_single_test_adv(
     original_points: List[TrajectoryPoint], w_error: float, sigma: float, sample_id: int
 ) -> BenchmarkResult:
     """Compression clean + noisy + metriques etendues."""
     compressor = MDLCompressor(w_error=w_error, verbose=False)
-    segs_clean = compressor.compress_player_trajectory(Trajectory(points=original_points))
+    segs_clean = compressor.compress_player_trajectory(
+        Trajectory(points=original_points)
+    )
     noisy_pts = add_gaussian_noise(original_points, sigma)
     segs_noisy = compressor.compress_player_trajectory(Trajectory(points=noisy_pts))
     return BenchmarkResult(
-        w_error=w_error, sigma=sigma, sample_id=sample_id,
-        nb_segments_clean=len(segs_clean), nb_segments_noisy=len(segs_noisy),
+        w_error=w_error,
+        sigma=sigma,
+        sample_id=sample_id,
+        nb_segments_clean=len(segs_clean),
+        nb_segments_noisy=len(segs_noisy),
         rmse_clean=calculate_rmse_clean(original_points, segs_noisy),
         segment_stability=calculate_segment_stability(len(segs_clean), len(segs_noisy)),
         nb_original_points=len(original_points),
@@ -471,12 +584,20 @@ def _run_single_test_adv(
 def _generate_heatmaps(df_agg: pd.DataFrame):
     """Genere les 2 heatmaps : Stabilite et Fidelite."""
     specs = [
-        ("nb_segments_noisy_mean",
-         "Heatmap 1 : Stabilite Structurelle\n(Nombre de segments moyen)",
-         "Nb segments", "YlOrRd", "heatmap_stabilite.png"),
-        ("rmse_clean_mean",
-         "Heatmap 2 : Fidelite au Signal Original\n(RMSE Clean - Metrique de Debruitage)",
-         "RMSE Clean", "RdYlGn_r", "heatmap_fidelite.png"),
+        (
+            "nb_segments_noisy_mean",
+            "Heatmap 1 : Stabilite Structurelle\n(Nombre de segments moyen)",
+            "Nb segments",
+            "YlOrRd",
+            "heatmap_stabilite.png",
+        ),
+        (
+            "rmse_clean_mean",
+            "Heatmap 2 : Fidelite au Signal Original\n(RMSE Clean - Metrique de Debruitage)",
+            "RMSE Clean",
+            "RdYlGn_r",
+            "heatmap_fidelite.png",
+        ),
     ]
     for col, title, label, cmap, filename in specs:
         pivot = df_agg.pivot(index="w_error", columns="sigma", values=col)
@@ -497,13 +618,27 @@ def _generate_heatmaps(df_agg: pd.DataFrame):
                 val = pivot.values[i, j]
                 if not np.isnan(val):
                     color = "white" if val > vmax * 0.6 else "black"
-                    ax.text(j, i, f"{val:.1f}", ha="center", va="center",
-                            color=color, fontsize=9, fontweight="bold")
+                    ax.text(
+                        j,
+                        i,
+                        f"{val:.1f}",
+                        ha="center",
+                        va="center",
+                        color=color,
+                        fontsize=9,
+                        fontweight="bold",
+                    )
 
         if "fidelite" in filename and 12.0 in list(pivot.index):
             w12_idx = list(pivot.index).index(12.0)
-            ax.axhline(y=w12_idx, color="blue", linestyle="--", linewidth=2,
-                       alpha=0.7, label="w=12 (optimal)")
+            ax.axhline(
+                y=w12_idx,
+                color="blue",
+                linestyle="--",
+                linewidth=2,
+                alpha=0.7,
+                label="w=12 (optimal)",
+            )
             ax.legend(loc="upper left", fontsize=10)
 
         plt.tight_layout()
@@ -537,8 +672,10 @@ def run_advanced():
     print("Echantillonnage aleatoire (Data Augmentation)...")
     samples = get_random_samples(full_traj, N_SAMPLES, SAMPLE_DURATION_TICKS)
     for i, s in enumerate(samples):
-        print(f"   Sample {i}: {len(s.points)} points "
-              f"(ticks {s.points[0].tick}-{s.points[-1].tick})")
+        print(
+            f"   Sample {i}: {len(s.points)} points "
+            f"(ticks {s.points[0].tick}-{s.points[-1].tick})"
+        )
     print()
 
     print("Execution du benchmark...")
@@ -552,49 +689,67 @@ def run_advanced():
                 completed += 1
                 if completed % 10 == 0 or completed == total:
                     print(
-                        f"   [{completed}/{total}] {completed/total*100:.1f}% | "
+                        f"   [{completed}/{total}] {completed / total * 100:.1f}% | "
                         f"w={w} sigma={sigma} | "
                         f"RMSE={r.rmse_clean:.2f} Stab={r.segment_stability:.1f}%"
                     )
 
-    df_raw = pd.DataFrame([{
-        "w_error": r.w_error, "sigma": r.sigma, "sample_id": r.sample_id,
-        "nb_segments_clean": r.nb_segments_clean,
-        "nb_segments_noisy": r.nb_segments_noisy,
-        "rmse_clean": r.rmse_clean,
-        "segment_stability": r.segment_stability,
-        "nb_original_points": r.nb_original_points,
-    } for r in results])
+    df_raw = pd.DataFrame(
+        [
+            {
+                "w_error": r.w_error,
+                "sigma": r.sigma,
+                "sample_id": r.sample_id,
+                "nb_segments_clean": r.nb_segments_clean,
+                "nb_segments_noisy": r.nb_segments_noisy,
+                "rmse_clean": r.rmse_clean,
+                "segment_stability": r.segment_stability,
+                "nb_original_points": r.nb_original_points,
+            }
+            for r in results
+        ]
+    )
 
     print("\nAgregation des resultats...")
     agg = (
         df_raw.groupby(["w_error", "sigma"])
-        .agg({
-            "nb_segments_clean": ["mean", "std"],
-            "nb_segments_noisy": ["mean", "std"],
-            "rmse_clean": ["mean", "std"],
-            "segment_stability": ["mean", "std"],
-            "nb_original_points": "mean",
-        })
+        .agg(
+            {
+                "nb_segments_clean": ["mean", "std"],
+                "nb_segments_noisy": ["mean", "std"],
+                "rmse_clean": ["mean", "std"],
+                "segment_stability": ["mean", "std"],
+                "nb_original_points": "mean",
+            }
+        )
         .reset_index()
     )
     agg.columns = [
-        "w_error", "sigma",
-        "nb_segments_clean_mean", "nb_segments_clean_std",
-        "nb_segments_noisy_mean", "nb_segments_noisy_std",
-        "rmse_clean_mean", "rmse_clean_std",
-        "segment_stability_mean", "segment_stability_std",
+        "w_error",
+        "sigma",
+        "nb_segments_clean_mean",
+        "nb_segments_clean_std",
+        "nb_segments_noisy_mean",
+        "nb_segments_noisy_std",
+        "rmse_clean_mean",
+        "rmse_clean_std",
+        "segment_stability_mean",
+        "segment_stability_std",
         "nb_original_points",
     ]
     csv_out = STATS_DIR / "advanced_stats.csv"
     agg.to_csv(csv_out, index=False)
     print(f"CSV -> {csv_out}")
-    print(f"RMSE Clean : {agg['rmse_clean_mean'].mean():.2f} +- {agg['rmse_clean_std'].mean():.2f}")
-    print(f"Stabilite  : {agg['segment_stability_mean'].mean():.1f}% +- {agg['segment_stability_std'].mean():.1f}%")
+    print(
+        f"RMSE Clean : {agg['rmse_clean_mean'].mean():.2f} +- {agg['rmse_clean_std'].mean():.2f}"
+    )
+    print(
+        f"Stabilite  : {agg['segment_stability_mean'].mean():.1f}% +- {agg['segment_stability_std'].mean():.1f}%"
+    )
 
     if 12.0 in agg["w_error"].values:
         df_w12 = agg[agg["w_error"] == 12.0]
-        print(f"\nZone Optimale (w=12) :")
+        print("\nZone Optimale (w=12) :")
         print(f"   RMSE Clean : {df_w12['rmse_clean_mean'].mean():.2f}")
         print(f"   Stabilite  : {df_w12['segment_stability_mean'].mean():.1f}%")
         print(f"   Segments   : {df_w12['nb_segments_noisy_mean'].mean():.1f}")
@@ -607,6 +762,7 @@ def run_advanced():
 # =============================================================================
 # MODE QUALITY — Validation sur N matchs réels
 # =============================================================================
+
 
 def run_quality(num_matches: int = 50, w_error: float = 12.0):
     """Mode QUALITY : mesure la precision de compression MDL sur N matchs reels."""
@@ -635,21 +791,23 @@ def run_quality(num_matches: int = 50, w_error: float = 12.0):
             segs = compressor.compress_player_trajectory(traj)
             metrics = calculate_reconstruction_error(traj, segs)
             rate = calculate_compression_rate(len(traj), len(segs))
-            results.append({
-                "match_id": match_id,
-                "num_original_points": len(traj),
-                "num_segments": len(segs),
-                "compression_rate": rate,
-                "rmse": metrics["rmse"],
-                "max_error": metrics["max_error"],
-                "mean_error": metrics["mean_error"],
-                "w_error": w_error,
-            })
+            results.append(
+                {
+                    "match_id": match_id,
+                    "num_original_points": len(traj),
+                    "num_segments": len(segs),
+                    "compression_rate": rate,
+                    "rmse": metrics["rmse"],
+                    "max_error": metrics["max_error"],
+                    "mean_error": metrics["mean_error"],
+                    "w_error": w_error,
+                }
+            )
         except Exception as e:
             print(f"  {match_id}: {e}")
             continue
         if i % 10 == 0 or i == len(csv_files):
-            print(f"   [{i}/{len(csv_files)}] {i/len(csv_files)*100:.0f}%")
+            print(f"   [{i}/{len(csv_files)}] {i / len(csv_files) * 100:.0f}%")
 
     df = pd.DataFrame(results)
     if df.empty:
@@ -672,42 +830,76 @@ def run_quality(num_matches: int = 50, w_error: float = 12.0):
     print(f"CSV -> {csv_out}")
 
     fig, axes = plt.subplots(2, 2, figsize=(14, 10))
-    fig.suptitle(f"Benchmark Qualite - Compression MDL (w_error={w_error})",
-                 fontsize=16, fontweight="bold")
+    fig.suptitle(
+        f"Benchmark Qualite - Compression MDL (w_error={w_error})",
+        fontsize=16,
+        fontweight="bold",
+    )
 
     ax = axes[0, 0]
     ax.hist(df["rmse"], bins=30, color="steelblue", edgecolor="black", alpha=0.7)
-    ax.axvline(df["rmse"].mean(), color="red", linestyle="--", linewidth=2,
-               label=f"Moyenne: {df['rmse'].mean():.3f}")
-    ax.axvline(df["rmse"].median(), color="orange", linestyle="--", linewidth=2,
-               label=f"Mediane: {df['rmse'].median():.3f}")
-    ax.set_xlabel("RMSE"); ax.set_ylabel("Nb matchs")
+    ax.axvline(
+        df["rmse"].mean(),
+        color="red",
+        linestyle="--",
+        linewidth=2,
+        label=f"Moyenne: {df['rmse'].mean():.3f}",
+    )
+    ax.axvline(
+        df["rmse"].median(),
+        color="orange",
+        linestyle="--",
+        linewidth=2,
+        label=f"Mediane: {df['rmse'].median():.3f}",
+    )
+    ax.set_xlabel("RMSE")
+    ax.set_ylabel("Nb matchs")
     ax.set_title("Distribution RMSE", fontweight="bold")
-    ax.legend(); ax.grid(alpha=0.3)
+    ax.legend()
+    ax.grid(alpha=0.3)
 
     ax = axes[0, 1]
     ax.hist(df["max_error"], bins=30, color="coral", edgecolor="black", alpha=0.7)
-    ax.axvline(df["max_error"].mean(), color="red", linestyle="--", linewidth=2,
-               label=f"Moyenne: {df['max_error'].mean():.2f}")
-    ax.set_xlabel("Erreur Maximale"); ax.set_ylabel("Nb matchs")
+    ax.axvline(
+        df["max_error"].mean(),
+        color="red",
+        linestyle="--",
+        linewidth=2,
+        label=f"Moyenne: {df['max_error'].mean():.2f}",
+    )
+    ax.set_xlabel("Erreur Maximale")
+    ax.set_ylabel("Nb matchs")
     ax.set_title("Distribution Erreur Max", fontweight="bold")
-    ax.legend(); ax.grid(alpha=0.3)
+    ax.legend()
+    ax.grid(alpha=0.3)
 
     ax = axes[1, 0]
-    sc = ax.scatter(df["compression_rate"], df["rmse"],
-                    c=df["num_original_points"], cmap="viridis",
-                    s=50, alpha=0.6, edgecolors="black", linewidth=0.5)
-    ax.set_xlabel("Taux de compression (%)"); ax.set_ylabel("RMSE")
+    sc = ax.scatter(
+        df["compression_rate"],
+        df["rmse"],
+        c=df["num_original_points"],
+        cmap="viridis",
+        s=50,
+        alpha=0.6,
+        edgecolors="black",
+        linewidth=0.5,
+    )
+    ax.set_xlabel("Taux de compression (%)")
+    ax.set_ylabel("RMSE")
     ax.set_title("Trade-off : Compression vs Precision", fontweight="bold")
     ax.grid(alpha=0.3)
     plt.colorbar(sc, ax=ax).set_label("Nb points originaux", fontsize=9)
 
     ax = axes[1, 1]
-    bp = ax.boxplot([df["rmse"], df["mean_error"], df["max_error"]],
-                    labels=["RMSE", "Erreur Moy.", "Erreur Max"],
-                    patch_artist=True, showmeans=True)
+    bp = ax.boxplot(
+        [df["rmse"], df["mean_error"], df["max_error"]],
+        labels=["RMSE", "Erreur Moy.", "Erreur Max"],
+        patch_artist=True,
+        showmeans=True,
+    )
     for patch, color in zip(bp["boxes"], ["steelblue", "lightgreen", "coral"]):
-        patch.set_facecolor(color); patch.set_alpha(0.7)
+        patch.set_facecolor(color)
+        patch.set_alpha(0.7)
     ax.set_ylabel("Valeur d'erreur")
     ax.set_title("Comparaison des metriques", fontweight="bold")
     ax.grid(axis="y", alpha=0.3)
@@ -723,6 +915,7 @@ def run_quality(num_matches: int = 50, w_error: float = 12.0):
 # =============================================================================
 # MODE TRIPTYCH — Figure de soutenance
 # =============================================================================
+
 
 def run_triptych(w_error: float = 12.0, sigma: float = 3.0) -> None:
     """Mode TRIPTYCH : genere la figure de soutenance Clean -> Bruit -> MDL."""
@@ -765,8 +958,10 @@ def run_triptych(w_error: float = 12.0, sigma: float = 3.0) -> None:
     segments = MDLCompressor(w_error=w_error, verbose=False).compress_player_trajectory(
         Trajectory(points=noisy_points)
     )
-    print(f"   {len(trajectory_clean.points)} points -> {len(segments)} segments "
-          f"({100 - len(segments)/len(x_clean)*100:.1f}% compression)")
+    print(
+        f"   {len(trajectory_clean.points)} points -> {len(segments)} segments "
+        f"({100 - len(segments) / len(x_clean) * 100:.1f}% compression)"
+    )
 
     # Generation de la figure
     print("\nCreation de la figure...")
@@ -774,56 +969,117 @@ def run_triptych(w_error: float = 12.0, sigma: float = 3.0) -> None:
     fig.suptitle(
         f"Robustesse de l'algorithme MDL face au bruit\n"
         f"Match {MATCH_ID} - Joueur {PLAYER_ID} - Ticks {TRIPTYCH_TICK_START}-{TRIPTYCH_TICK_END}",
-        fontsize=16, fontweight="bold", y=0.98,
+        fontsize=16,
+        fontweight="bold",
+        y=0.98,
     )
 
     # Panneau 1 : Original
     ax1 = axes[0]
-    ax1.plot(x_clean, y_clean, color="blue", linewidth=1.5, alpha=0.8,
-             marker="o", markersize=4, markerfacecolor="blue",
-             markeredgecolor="darkblue", markeredgewidth=0.5)
-    ax1.set_title("1. Trajectoire Originale (Clean)", fontsize=13, fontweight="bold", pad=10)
-    ax1.set_xlabel("X (coordonnees carte)"); ax1.set_ylabel("Y (coordonnees carte)")
+    ax1.plot(
+        x_clean,
+        y_clean,
+        color="blue",
+        linewidth=1.5,
+        alpha=0.8,
+        marker="o",
+        markersize=4,
+        markerfacecolor="blue",
+        markeredgecolor="darkblue",
+        markeredgewidth=0.5,
+    )
+    ax1.set_title(
+        "1. Trajectoire Originale (Clean)", fontsize=13, fontweight="bold", pad=10
+    )
+    ax1.set_xlabel("X (coordonnees carte)")
+    ax1.set_ylabel("Y (coordonnees carte)")
     ax1.grid(True, alpha=0.3, linestyle="--")
-    ax1.set_aspect("equal"); ax1.set_facecolor("#f9f9ff")
-    ax1.legend(handles=[mpatches.Patch(color="blue", label=f"{len(x_clean)} points")],
-               loc="upper right", fontsize=9)
+    ax1.set_aspect("equal")
+    ax1.set_facecolor("#f9f9ff")
+    ax1.legend(
+        handles=[mpatches.Patch(color="blue", label=f"{len(x_clean)} points")],
+        loc="upper right",
+        fontsize=9,
+    )
 
     # Panneau 2 : Bruit
     ax2 = axes[1]
     ax2.plot(x_noisy, y_noisy, color="gray", linewidth=0.8, alpha=0.5)
-    ax2.plot(x_noisy, y_noisy, color="gray", linewidth=0, alpha=0.7,
-             marker="x", markersize=6, markeredgewidth=1.5)
-    ax2.set_title(f"2. Injection de Bruit (sigma={sigma})",
-                  fontsize=13, fontweight="bold", pad=10, color="darkred")
-    ax2.set_xlabel("X (coordonnees carte)"); ax2.set_ylabel("Y (coordonnees carte)")
+    ax2.plot(
+        x_noisy,
+        y_noisy,
+        color="gray",
+        linewidth=0,
+        alpha=0.7,
+        marker="x",
+        markersize=6,
+        markeredgewidth=1.5,
+    )
+    ax2.set_title(
+        f"2. Injection de Bruit (sigma={sigma})",
+        fontsize=13,
+        fontweight="bold",
+        pad=10,
+        color="darkred",
+    )
+    ax2.set_xlabel("X (coordonnees carte)")
+    ax2.set_ylabel("Y (coordonnees carte)")
     ax2.grid(True, alpha=0.3, linestyle="--")
-    ax2.set_aspect("equal"); ax2.set_facecolor("#fff9f9")
-    ax2.legend(handles=[mpatches.Patch(color="gray", label=f"Bruit gaussien sigma={sigma}")],
-               loc="upper right", fontsize=9)
+    ax2.set_aspect("equal")
+    ax2.set_facecolor("#fff9f9")
+    ax2.legend(
+        handles=[mpatches.Patch(color="gray", label=f"Bruit gaussien sigma={sigma}")],
+        loc="upper right",
+        fontsize=9,
+    )
 
     # Panneau 3 : MDL
     ax3 = axes[2]
     ax3.plot(x_noisy, y_noisy, color="lightgray", linewidth=0.6, alpha=0.4, zorder=1)
-    ax3.plot(x_noisy, y_noisy, color="lightgray", linewidth=0, alpha=0.35,
-             marker="x", markersize=4, markeredgewidth=0.8, zorder=2)
+    ax3.plot(
+        x_noisy,
+        y_noisy,
+        color="lightgray",
+        linewidth=0,
+        alpha=0.35,
+        marker="x",
+        markersize=4,
+        markeredgewidth=0.8,
+        zorder=2,
+    )
     for segment in segments:
         x_seg = [segment.start.x, segment.end.x]
         y_seg = [segment.start.y, segment.end.y]
         ax3.plot(x_seg, y_seg, color="red", linewidth=2.5, alpha=0.9, zorder=10)
-        ax3.plot(x_seg, y_seg, "o", color="red", markersize=8,
-                 markeredgecolor="darkred", markeredgewidth=1.5, zorder=11)
-    ax3.set_title(f"3. Resultat MDL (Filtrage w={w_error})",
-                  fontsize=13, fontweight="bold", pad=10, color="darkgreen")
-    ax3.set_xlabel("X (coordonnees carte)"); ax3.set_ylabel("Y (coordonnees carte)")
+        ax3.plot(
+            x_seg,
+            y_seg,
+            "o",
+            color="red",
+            markersize=8,
+            markeredgecolor="darkred",
+            markeredgewidth=1.5,
+            zorder=11,
+        )
+    ax3.set_title(
+        f"3. Resultat MDL (Filtrage w={w_error})",
+        fontsize=13,
+        fontweight="bold",
+        pad=10,
+        color="darkgreen",
+    )
+    ax3.set_xlabel("X (coordonnees carte)")
+    ax3.set_ylabel("Y (coordonnees carte)")
     ax3.grid(True, alpha=0.3, linestyle="--")
-    ax3.set_aspect("equal"); ax3.set_facecolor("#f9fff9")
+    ax3.set_aspect("equal")
+    ax3.set_facecolor("#f9fff9")
     ax3.legend(
         handles=[
             mpatches.Patch(color="red", label=f"{len(segments)} segments MDL"),
             mpatches.Patch(color="lightgray", label="Bruit de fond"),
         ],
-        loc="upper right", fontsize=9,
+        loc="upper right",
+        fontsize=9,
     )
 
     # Alignement des axes
@@ -855,12 +1111,13 @@ def run_triptych(w_error: float = 12.0, sigma: float = 3.0) -> None:
     print(f"  Panneau 1 : {len(x_clean)} points originaux (bleu)")
     print(f"  Panneau 2 : {len(x_noisy)} points bruites (gris, sigma={sigma})")
     print(f"  Panneau 3 : {len(segments)} segments MDL (rouge, w={w_error})")
-    print(f"  Taux de compression : {100 - len(segments)/len(x_clean)*100:.1f}%")
+    print(f"  Taux de compression : {100 - len(segments) / len(x_clean) * 100:.1f}%")
 
 
 # =============================================================================
 # MAIN
 # =============================================================================
+
 
 def main():
     parser = argparse.ArgumentParser(
@@ -881,19 +1138,27 @@ exemples :
         """,
     )
     parser.add_argument(
-        "--mode", choices=["full", "advanced", "quality", "triptych"],
-        required=True, help="Mode d'execution",
+        "--mode",
+        choices=["full", "advanced", "quality", "triptych"],
+        required=True,
+        help="Mode d'execution",
     )
     parser.add_argument(
-        "--num_matches", type=int, default=50,
+        "--num_matches",
+        type=int,
+        default=50,
         help="(mode quality) Nombre de matchs a analyser (defaut: 50)",
     )
     parser.add_argument(
-        "--w_error", type=float, default=12.0,
+        "--w_error",
+        type=float,
+        default=12.0,
         help="Parametre w_error MDL (defaut: 12.0)",
     )
     parser.add_argument(
-        "--sigma", type=float, default=3.0,
+        "--sigma",
+        type=float,
+        default=3.0,
         help="(mode triptych) Ecart-type du bruit gaussien (defaut: 3.0)",
     )
     args = parser.parse_args()

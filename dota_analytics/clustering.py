@@ -32,7 +32,9 @@ def load_data(folder_path, limit=None, max_files=None, min_length=5.0):
 
     if max_files is not None and max_files < len(files):
         files = files[:max_files]
-        logger.info("   Restriction : On ne charge que les %d premiers fichiers.", max_files)
+        logger.info(
+            "   Restriction : On ne charge que les %d premiers fichiers.", max_files
+        )
 
     all_segments = []
     metadata = []
@@ -99,12 +101,8 @@ def compute_traclus_similarity(segments, w_perp=1.0, w_angle=1.0, w_par=1.0):
     Returns:
         Matrice de similarité N×N (valeurs négatives de distance).
     """
-    starts_flt = np.array(
-        [(s.start.x, s.start.y) for s in segments], dtype=np.float32
-    )
-    ends_flt = np.array(
-        [(s.end.x, s.end.y) for s in segments], dtype=np.float32
-    )
+    starts_flt = np.array([(s.start.x, s.start.y) for s in segments], dtype=np.float32)
+    ends_flt = np.array([(s.end.x, s.end.y) for s in segments], dtype=np.float32)
     vectors = ends_flt - starts_flt
     lengths = np.linalg.norm(vectors, axis=1)
     lengths = np.clip(lengths, 1e-9, None)
@@ -133,9 +131,8 @@ def compute_traclus_similarity(segments, w_perp=1.0, w_angle=1.0, w_par=1.0):
     proj_s = vec_sx * vx + vec_sy * vy
     proj_e = vec_ex * vx + vec_ey * vy
     base_l = lengths[:, np.newaxis]
-    d_par = (
-        np.minimum(np.abs(proj_s), np.abs(proj_s - base_l))
-        + np.minimum(np.abs(proj_e), np.abs(proj_e - base_l))
+    d_par = np.minimum(np.abs(proj_s), np.abs(proj_s - base_l)) + np.minimum(
+        np.abs(proj_e), np.abs(proj_e - base_l)
     )
 
     # Combinaison pondérée
@@ -173,7 +170,9 @@ def run_clustering(
         w_par: Poids TRACLUS parallèle (AP/kmedoids).
     """
     # On passe le parametre min_length a load_data
-    segments, meta = load_data(target_folder, max_files=max_files, min_length=min_length)
+    segments, meta = load_data(
+        target_folder, max_files=max_files, min_length=min_length
+    )
     n = len(segments)
 
     if n == 0:
@@ -231,7 +230,9 @@ def run_clustering(
     elif algo == "affinity":
         MAX_SEGMENTS_AFFINITY = 5000
         if n > MAX_SEGMENTS_AFFINITY:
-            logger.error("Affinity Propagation est limite a %d segments.", MAX_SEGMENTS_AFFINITY)
+            logger.error(
+                "Affinity Propagation est limite a %d segments.", MAX_SEGMENTS_AFFINITY
+            )
             logger.error("   %d segments detectes. Reduisez avec --max_files.", n)
             logger.error("   Alternative sans limite : --algo kmeans")
             return
@@ -307,7 +308,10 @@ def run_clustering(
         logger.info("Médoïdes (indices globaux) : %s", km.medoid_indices_)
 
     else:
-        logger.error("Algorithme inconnu : '%s'. Choisir 'affinity', 'kmeans' ou 'kmedoids'.", algo)
+        logger.error(
+            "Algorithme inconnu : '%s'. Choisir 'affinity', 'kmeans' ou 'kmedoids'.",
+            algo,
+        )
         return
 
     # Sauvegarde
