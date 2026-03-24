@@ -17,3 +17,7 @@ dist/
 build/
 .env
 .env.local
+bench_MDL.aux
+bench_MDL.out
+bench_MDL.pdf
+bench_MDL.tex

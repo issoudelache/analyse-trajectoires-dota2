@@ -33,7 +33,10 @@ def reconstruct_sequences(match_clusters: Dict[str, Dict[str, int]]) -> List[Lis
 
         # Pour chaque joueur du match, trier ses segments par index temporel
         for pid in sorted(player_sequences.keys()):
-            sequence = [label for _, label in sorted(player_sequences[pid])]
+            sorted_labels = [label for _, label in sorted(player_sequences[pid])]
+            # Compression RLE : supprimer les états consécutifs identiques
+            # (un joueur qui reste dans la même zone ne constitue pas une transition)
+            sequence = [v for i, v in enumerate(sorted_labels) if i == 0 or v != sorted_labels[i - 1]]
             if sequence:  # Ne pas ajouter les séquences vides
                 ordered_sequences.append(sequence)
 
