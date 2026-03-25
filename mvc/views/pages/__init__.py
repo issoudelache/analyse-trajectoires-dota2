@@ -7,6 +7,7 @@ from mvc.views.pages.compress_page import CompressPage
 from mvc.views.pages.cluster_page import ClusterPage
 from mvc.views.pages.comparison_page import ComparisonPage
 from mvc.views.pages.mining_page import MiningPage
+from mvc.views.pages.pipeline_page import PipelinePage
 
 __all__ = [
     "BasePage",
@@ -16,4 +17,5 @@ __all__ = [
     "ClusterPage",
     "ComparisonPage",
     "MiningPage",
+    "PipelinePage",
 ]

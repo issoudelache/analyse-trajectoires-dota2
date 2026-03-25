@@ -414,7 +414,7 @@ class DotaMapCanvas(ctk.CTkFrame):
                 bb[1] - p,
                 bb[2] + p,
                 bb[3] + p,
-                fill="#1a1a2eee",
+                fill="#1a1a2e",
                 outline=TEXT_DIM,
                 tags="tooltip",
             )
@@ -520,6 +520,59 @@ class DotaMapCanvas(ctk.CTkFrame):
                     )
 
         img.save(filepath, "JPEG", quality=95)
+
+    def capture_frame(self):
+        """Capture le contenu visible du canvas en PIL Image (en mémoire)."""
+        from PIL import Image as PILImage, ImageDraw
+
+        self.canvas.update_idletasks()
+        cw = self.canvas.winfo_width()
+        ch = self.canvas.winfo_height()
+        if cw < 10 or ch < 10:
+            return PILImage.new("RGB", (1, 1), "#0d0d0d")
+
+        img = PILImage.new("RGB", (cw, ch), "#0d0d0d")
+
+        if self._canvas_img and self._map_size > 10:
+            bg = self._canvas_img.resize(
+                (self._map_size, self._map_size), PILImage.LANCZOS
+            )
+            img.paste(bg, (self._ox, self._oy))
+
+        draw = ImageDraw.Draw(img)
+        for pid in self._line_ids:
+            color = PLAYER_COLORS[pid % len(PLAYER_COLORS)]
+            vis_n = self._vis_count.get(pid, 0)
+            lines = self._lines.get(pid, [])
+            for i in range(vis_n):
+                x1, y1, x2, y2 = lines[i][0], lines[i][1], lines[i][2], lines[i][3]
+                draw.line(
+                    [(self._gx(x1), self._gy(y1)), (self._gx(x2), self._gy(y2))],
+                    fill=color,
+                    width=2,
+                )
+        return img
+
+    def display_frame(self, pil_image):
+        """Affiche une PIL Image pré-rendue sur le canvas (mode lecture)."""
+        self.canvas.delete("all")
+        self._bg_item = None
+        self._lines.clear()
+        self._line_ids.clear()
+        self._end_ticks.clear()
+        self._vis_count.clear()
+        self._head_ids.clear()
+        self._dot_ids.clear()
+        self._item_info.clear()
+        self._draw_mode = "none"
+
+        cw = self.canvas.winfo_width()
+        ch = self.canvas.winfo_height()
+        if cw < 10 or ch < 10:
+            return
+        resized = pil_image.resize((cw, ch), Image.LANCZOS)
+        self._bg_photo = ImageTk.PhotoImage(resized)
+        self.canvas.create_image(0, 0, anchor="nw", image=self._bg_photo)
 
     # ── Stats helper ─────────────────────────────────────────────────────
 

@@ -247,6 +247,69 @@ class AppModel:
                 callback(i + 1, total, r)
         return results
 
+    def compress_parallel(self, w_error: float) -> List[CompressResult]:
+        """Compression parallèle avec multiprocessing.Pool (comme run.py)."""
+        from multiprocessing import Pool, cpu_count
+
+        csv_dir = self._csv_dir()
+        csv_files = sorted(csv_dir.glob("coord_*.csv"))
+        if not csv_files:
+            return []
+
+        tasks = [(csv_path, w_error, COMPRESSED_DIR) for csv_path in csv_files]
+        num_workers = min(max(cpu_count() - 2, 1), 10)
+
+        with Pool(processes=num_workers) as pool:
+            results = pool.starmap(AppModel._compress_one, tasks)
+
+        return results
+
+    def generate_frequency_chart(
+        self, patterns: List[Tuple[Tuple[int, ...], int]], top_n: int = 20
+    ) -> Tuple[bool, bytes, str]:
+        """Génère un diagramme en barres des motifs les plus fréquents."""
+        try:
+            import io
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+
+            if not patterns:
+                return False, b"", "Aucun motif"
+
+            top = patterns[:top_n]
+            labels = [" → ".join(str(c) for c in p) for p, _ in top]
+            supports = [s for _, s in top]
+
+            fig, ax = plt.subplots(figsize=(14, max(6, len(top) * 0.4)), facecolor="#1a1a2e")
+            ax.set_facecolor("#1a1a2e")
+
+            y_pos = range(len(labels))
+            bars = ax.barh(y_pos, supports, color="#e94560", edgecolor="#0f3460", height=0.7)
+            ax.set_yticks(y_pos)
+            ax.set_yticklabels(labels, fontsize=9, color="white")
+            ax.invert_yaxis()
+            ax.set_xlabel("Support", color="white", fontsize=12)
+            ax.set_title(f"Top {len(top)} Motifs Fréquents", color="white", fontsize=14, fontweight="bold")
+            ax.tick_params(colors="white")
+            for spine in ax.spines.values():
+                spine.set_color("#8899aa")
+
+            # Annotations
+            for bar, val in zip(bars, supports):
+                ax.text(bar.get_width() + 0.3, bar.get_y() + bar.get_height() / 2,
+                        str(val), va="center", color="white", fontsize=9)
+
+            plt.tight_layout()
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=100, facecolor="#1a1a2e", bbox_inches="tight")
+            buf.seek(0)
+            image_bytes = buf.read()
+            plt.close(fig)
+            return True, image_bytes, ""
+        except Exception as e:
+            return False, b"", str(e)
+
     # ── overlay (données pour dessin) ────────────────────────────────────
 
     def load_overlay_data(self, w_error: float, match_id: str) -> Optional[OverlayData]:

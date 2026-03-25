@@ -2,11 +2,14 @@
 ComparisonPage — Comparaison côte à côte brut vs compressé.
 """
 
+import json
+from pathlib import Path
+
 import customtkinter as ctk
 
 from dota_analytics.plotting import PLAYER_COLORS
 from mvc.views.pages.base_page import BasePage
-from mvc.views.theme import ACCENT, BG_CARD, TEXT_DIM, TEXT_LIGHT
+from mvc.views.theme import ACCENT, ACCENT2, BG_CARD, TEXT_DIM, TEXT_LIGHT
 from mvc.views.widgets.map_canvas import DotaMapCanvas
 
 
@@ -17,6 +20,7 @@ class ComparisonPage(BasePage):
     _BASE_TICK_STEP = 300
     PLAY_INTERVAL_MS = 50
     _TICK_JUMP = 1000  # ticks par flèche clavier
+    _REC_STEP = 300  # ticks entre chaque frame enregistrée
 
     def __init__(self, master, controller, switch_page_cb):
         super().__init__(master, controller)
@@ -25,6 +29,17 @@ class ComparisonPage(BasePage):
         self._paused = False
         self._comparison_data = None
         self._speed = 1.0
+        # Recording state
+        self._recording = False
+        self._rec_idx = 0
+        self._rec_ticks: list = []
+        self._rec_dir: Path | None = None
+        # Playback-from-recording state
+        self._playback_mode = False  # True = lecture d'enregistrement
+        self._pb_frames_raw: list = []  # PIL images
+        self._pb_frames_comp: list = []
+        self._pb_ticks: list = []
+        self._pb_idx = 0
         self._build()
         self._bind_keys()
 
@@ -88,6 +103,26 @@ class ComparisonPage(BasePage):
             width=110,
         )
         self.export_btn.pack(side="left", padx=(15, 5))
+
+        self.rec_btn = ctk.CTkButton(
+            top,
+            text="Enregistrer",
+            fg_color=ACCENT2,
+            hover_color="#1a4a80",
+            command=self._on_record,
+            width=110,
+        )
+        self.rec_btn.pack(side="left", padx=5)
+
+        self.load_rec_btn = ctk.CTkButton(
+            top,
+            text="Charger Enreg.",
+            fg_color=ACCENT2,
+            hover_color="#1a4a80",
+            command=self._on_load_recording,
+            width=120,
+        )
+        self.load_rec_btn.pack(side="left", padx=5)
 
         # ── Légende horizontale compacte ─────────────────────────────────
         legend_bar = ctk.CTkFrame(self, fg_color=BG_CARD, corner_radius=8, height=28)
@@ -176,6 +211,18 @@ class ComparisonPage(BasePage):
         )
         self.tick_label.pack(side="right", padx=10)
 
+        # ── Barre de progression enregistrement ──────────────────────────
+        self.rec_bar_frame = ctk.CTkFrame(self, fg_color=BG_CARD, corner_radius=8, height=30)
+        # pas pack() — on l'affiche seulement pendant l'enregistrement
+        self.rec_bar_frame.pack_propagate(False)
+        self.rec_progress = ctk.CTkProgressBar(self.rec_bar_frame, width=500, mode="determinate")
+        self.rec_progress.set(0)
+        self.rec_progress.pack(side="left", padx=15, pady=5)
+        self.rec_label = ctk.CTkLabel(
+            self.rec_bar_frame, text="", font=ctk.CTkFont(size=10), text_color=TEXT_DIM
+        )
+        self.rec_label.pack(side="left", padx=10)
+
         # ── Stats en bas ─────────────────────────────────────────────────
         stats_bar = ctk.CTkFrame(self, fg_color=BG_CARD, corner_radius=8, height=30)
         stats_bar.pack(fill="x", padx=10, pady=(2, 8))
@@ -257,6 +304,11 @@ class ComparisonPage(BasePage):
         self.load_btn.configure(state="normal", text="Charger")
         if data is None:
             return
+        # Quitter le mode enregistrement si actif
+        self._playback_mode = False
+        self._pb_frames_raw.clear()
+        self._pb_frames_comp.clear()
+        self._pb_ticks.clear()
         self._comparison_data = data
 
         self.map_raw.set_background(data.canvas_image)
@@ -280,9 +332,12 @@ class ComparisonPage(BasePage):
     def _on_slider(self, val):
         tick = int(float(val))
         self.tick_label.configure(text=f"tick: {tick}")
-        self.map_raw.set_tick(tick)
-        self.map_compressed.set_tick(tick)
-        self._refresh_stats()
+        if self._playback_mode:
+            self._show_pb_frame_at_tick(tick)
+        else:
+            self.map_raw.set_tick(tick)
+            self.map_compressed.set_tick(tick)
+            self._refresh_stats()
 
     # ── Play / Pause / Stop ────────────────────────────────────────────
 
@@ -295,7 +350,7 @@ class ComparisonPage(BasePage):
             self._start_play()
 
     def _start_play(self):
-        if self._comparison_data is None:
+        if self._comparison_data is None and not self._playback_mode:
             return
         self._playing = True
         self._paused = False
@@ -317,13 +372,18 @@ class ComparisonPage(BasePage):
         self.play_btn.configure(text="▶  Play", fg_color=ACCENT)
 
     def _play_tick(self):
-        if not self._playing or self._paused or self._comparison_data is None:
+        if not self._playing or self._paused:
             return
+        if self._comparison_data is None and not self._playback_mode:
+            return
+
         current = int(float(self.tick_slider.get()))
         step = int(self._BASE_TICK_STEP * self._speed)
         new_tick = current + step
-        if new_tick >= self._comparison_data.max_tick:
-            new_tick = self._comparison_data.max_tick
+
+        max_tick = self._pb_ticks[-1] if self._playback_mode else self._comparison_data.max_tick
+        if new_tick >= max_tick:
+            new_tick = max_tick
             self._stop_play()
 
         self.tick_slider.set(new_tick)
@@ -344,18 +404,20 @@ class ComparisonPage(BasePage):
         self._toggle_play()
 
     def _on_left(self, event=None):
-        if self._comparison_data is None:
+        if self._comparison_data is None and not self._playback_mode:
             return
         current = int(float(self.tick_slider.get()))
-        new_tick = max(self._comparison_data.min_tick, current - self._TICK_JUMP)
+        min_tick = self._pb_ticks[0] if self._playback_mode else self._comparison_data.min_tick
+        new_tick = max(min_tick, current - self._TICK_JUMP)
         self.tick_slider.set(new_tick)
         self._on_slider(new_tick)
 
     def _on_right(self, event=None):
-        if self._comparison_data is None:
+        if self._comparison_data is None and not self._playback_mode:
             return
         current = int(float(self.tick_slider.get()))
-        new_tick = min(self._comparison_data.max_tick, current + self._TICK_JUMP)
+        max_tick = self._pb_ticks[-1] if self._playback_mode else self._comparison_data.max_tick
+        new_tick = min(max_tick, current + self._TICK_JUMP)
         self.tick_slider.set(new_tick)
         self._on_slider(new_tick)
 
@@ -392,3 +454,210 @@ class ComparisonPage(BasePage):
         self._stat_players.configure(text=f"Joueurs actifs: {sr['active_players']}")
         m, s = divmod(int(sr["elapsed_sec"]), 60)
         self._stat_time.configure(text=f"Temps: {m:02d}:{s:02d}")
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Enregistrement (pré-rendu de toutes les frames)
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _on_record(self):
+        """Lance l'enregistrement de toutes les frames."""
+        if self._comparison_data is None:
+            return
+        if self._recording:
+            return
+
+        from mvc.config import OUTPUT_DIR
+
+        mid = self._comparison_data.match_id
+        w = self._comparison_data.w_error
+        rec_dir = OUTPUT_DIR / "recordings" / f"{mid}_w{w}"
+        rec_dir.mkdir(parents=True, exist_ok=True)
+
+        min_t = self._comparison_data.min_tick
+        max_t = self._comparison_data.max_tick
+        ticks = list(range(min_t, max_t + 1, self._REC_STEP))
+        if not ticks or ticks[-1] < max_t:
+            ticks.append(max_t)
+
+        self._recording = True
+        self._rec_idx = 0
+        self._rec_ticks = ticks
+        self._rec_dir = rec_dir
+
+        self._stop_play()
+        self.rec_btn.configure(state="disabled", text="Enregistrement…")
+        self.rec_bar_frame.pack(fill="x", padx=10, pady=(2, 2), before=self._stat_raw.master)
+        self.rec_progress.set(0)
+        self.rec_label.configure(text=f"0 / {len(ticks)} frames")
+
+        # Lancer le rendu frame-par-frame via after()
+        self.after(1, self._record_next_frame)
+
+    def _record_next_frame(self):
+        """Rend et sauvegarde une frame, puis planifie la suivante."""
+        if not self._recording:
+            return
+        total = len(self._rec_ticks)
+        if self._rec_idx >= total:
+            self._finish_recording()
+            return
+
+        tick = self._rec_ticks[self._rec_idx]
+
+        # Mettre à jour les canvas
+        self.map_raw.set_tick(tick)
+        self.map_compressed.set_tick(tick)
+        self.map_raw.canvas.update_idletasks()
+        self.map_compressed.canvas.update_idletasks()
+
+        # Capturer les frames
+        raw_img = self.map_raw.capture_frame()
+        comp_img = self.map_compressed.capture_frame()
+
+        # Sauvegarder
+        raw_img.save(str(self._rec_dir / f"raw_{self._rec_idx:05d}.jpg"), "JPEG", quality=85)
+        comp_img.save(str(self._rec_dir / f"comp_{self._rec_idx:05d}.jpg"), "JPEG", quality=85)
+
+        self._rec_idx += 1
+        self.rec_progress.set(self._rec_idx / total)
+        self.rec_label.configure(text=f"{self._rec_idx} / {total} frames")
+
+        # Planifier la frame suivante (after(1) pour garder le GUI réactif)
+        self.after(1, self._record_next_frame)
+
+    def _finish_recording(self):
+        """Finalise l'enregistrement : sauvegarde les métadonnées."""
+        meta = {
+            "match_id": self._comparison_data.match_id,
+            "w_error": self._comparison_data.w_error,
+            "min_tick": self._comparison_data.min_tick,
+            "max_tick": self._comparison_data.max_tick,
+            "step": self._REC_STEP,
+            "num_frames": len(self._rec_ticks),
+            "ticks": self._rec_ticks,
+        }
+        with open(self._rec_dir / "meta.json", "w") as f:
+            json.dump(meta, f)
+
+        self._recording = False
+        self.rec_btn.configure(state="normal", text="Enregistrer")
+        self.rec_btn.configure(text="Enregistré !", fg_color="#27ae60")
+        self.rec_label.configure(text=f"Terminé — {len(self._rec_ticks)} frames sauvegardées")
+        self.after(2000, self._reset_rec_btn)
+
+    def _reset_rec_btn(self):
+        self.rec_btn.configure(text="Enregistrer", fg_color=ACCENT2)
+        self.rec_bar_frame.pack_forget()
+
+    # ══════════════════════════════════════════════════════════════════════
+    # Chargement d'un enregistrement
+    # ══════════════════════════════════════════════════════════════════════
+
+    def _on_load_recording(self):
+        """Charge un enregistrement depuis le disque."""
+        from mvc.config import OUTPUT_DIR
+        from PIL import Image as PILImage
+
+        rec_base = OUTPUT_DIR / "recordings"
+        if not rec_base.exists():
+            return
+
+        # Chercher automatiquement le dernier enregistrement du match courant
+        if self._comparison_data:
+            mid = self._comparison_data.match_id
+            w = self._comparison_data.w_error
+            rec_dir = rec_base / f"{mid}_w{w}"
+        else:
+            # Prendre le premier dossier disponible
+            dirs = sorted(rec_base.iterdir())
+            if not dirs:
+                return
+            rec_dir = dirs[0]
+
+        meta_path = rec_dir / "meta.json"
+        if not meta_path.exists():
+            return
+
+        with open(meta_path) as f:
+            meta = json.load(f)
+
+        num_frames = meta["num_frames"]
+        ticks = meta["ticks"]
+
+        # Charger les frames en mémoire
+        self._stop_play()
+        self.load_rec_btn.configure(state="disabled", text="Chargement…")
+        self.rec_bar_frame.pack(fill="x", padx=10, pady=(2, 2), before=self._stat_raw.master)
+        self.rec_progress.set(0)
+        self.rec_label.configure(text=f"Chargement 0 / {num_frames}")
+
+        self._pb_frames_raw = [None] * num_frames
+        self._pb_frames_comp = [None] * num_frames
+        self._pb_ticks = ticks
+        self._pb_load_idx = 0
+        self._pb_load_dir = rec_dir
+        self._pb_load_total = num_frames
+
+        # Charger frame par frame via after() pour garder le GUI réactif
+        self.after(1, self._load_next_frame)
+
+    def _load_next_frame(self):
+        from PIL import Image as PILImage
+
+        idx = self._pb_load_idx
+        total = self._pb_load_total
+        if idx >= total:
+            self._finish_loading()
+            return
+
+        raw_path = self._pb_load_dir / f"raw_{idx:05d}.jpg"
+        comp_path = self._pb_load_dir / f"comp_{idx:05d}.jpg"
+
+        if raw_path.exists() and comp_path.exists():
+            self._pb_frames_raw[idx] = PILImage.open(str(raw_path)).copy()
+            self._pb_frames_comp[idx] = PILImage.open(str(comp_path)).copy()
+
+        self._pb_load_idx += 1
+        self.rec_progress.set(self._pb_load_idx / total)
+        self.rec_label.configure(text=f"Chargement {self._pb_load_idx} / {total}")
+        self.after(1, self._load_next_frame)
+
+    def _finish_loading(self):
+        """Active le mode lecture d'enregistrement."""
+        self._playback_mode = True
+        self._pb_idx = 0
+
+        self.load_rec_btn.configure(state="normal", text="Charger Enreg.")
+        self.rec_bar_frame.pack_forget()
+        self.rec_label.configure(text="")
+
+        # Configurer le slider pour le range de l'enregistrement
+        if self._pb_ticks:
+            self.tick_slider.configure(from_=self._pb_ticks[0], to=self._pb_ticks[-1])
+            self.tick_slider.set(self._pb_ticks[0])
+            self.tick_label.configure(text=f"tick: {self._pb_ticks[0]}  [ENREG.]")
+
+        # Afficher la première frame
+        self._show_pb_frame(0)
+
+        self._stat_raw.configure(text=f"Mode enregistrement — {len(self._pb_ticks)} frames")
+        self._stat_comp.configure(text="Lecture fluide sans lag")
+
+    def _show_pb_frame(self, idx: int):
+        """Affiche l'image pré-rendue n°idx."""
+        if idx < 0 or idx >= len(self._pb_frames_raw):
+            return
+        raw_img = self._pb_frames_raw[idx]
+        comp_img = self._pb_frames_comp[idx]
+        if raw_img and comp_img:
+            self.map_raw.display_frame(raw_img)
+            self.map_compressed.display_frame(comp_img)
+        self._pb_idx = idx
+
+    def _show_pb_frame_at_tick(self, tick: int):
+        """Trouve et affiche la frame la plus proche du tick demandé."""
+        import bisect
+        idx = bisect.bisect_right(self._pb_ticks, tick)
+        idx = max(0, min(idx, len(self._pb_ticks) - 1))
+        self._show_pb_frame(idx)
+        self.tick_label.configure(text=f"tick: {self._pb_ticks[idx]}  [ENREG.]")

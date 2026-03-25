@@ -211,11 +211,22 @@ class AppController:
         t = threading.Thread(target=_worker, daemon=True)
         t.start()
 
-    # ── Pipeline complet (one-click) ─────────────────────────────────────
+    # ── Pipeline page (dédié) ────────────────────────────────────────────
 
-    def start_full_pipeline(self, w_error: float, min_support: int = 10, max_length: int = 8):
-        """Lance le pipeline complet dans un thread :
-        compression → clustering → recodage → PrefixSpan → graphe."""
+    def start_pipeline_page(
+        self,
+        w_error: float,
+        algo: str = "affinity",
+        cluster_kwargs: dict = None,
+        min_support: int = 10,
+        max_length: int = 8,
+    ):
+        """Pipeline complet avec compression parallèle et paramètres clustering.
+
+        Les résultats intermédiaires sont envoyés à la PipelinePage.
+        """
+        if cluster_kwargs is None:
+            cluster_kwargs = {}
 
         def _worker():
             steps = [
@@ -223,42 +234,75 @@ class AppController:
                 "Clustering",
                 "Recodage",
                 "PrefixSpan",
-                "Graphe de transitions",
+                "Graphes",
             ]
             try:
-                # Étape 1 — compression
-                self._notify_pipeline(1, len(steps), steps[0])
-                self.model.compress(w_error)
+                # Étape 1 — compression parallèle
+                self._notify_pp(1, len(steps), steps[0])
+                results = self.model.compress_parallel(w_error)
+                n_ok = sum(1 for r in results if r.success)
+                self._notify_pp_result(1, f"{n_ok}/{len(results)} matchs compressés")
 
                 # Étape 2 — clustering
-                self._notify_pipeline(2, len(steps), steps[1])
-                self.model.run_clustering(w_error)
+                self._notify_pp(2, len(steps), steps[1])
+                self.model.run_clustering(w_error, algo=algo, **cluster_kwargs)
+                clusters = self.model.list_available_clusters(w_error)
+                if not clusters:
+                    raise RuntimeError(
+                        "Clustering échoué (0 clusters). "
+                        "Pour affinity/kmedoids, réduisez max_files (<5000 segments)."
+                    )
+                self._notify_pp_result(2, f"{len(clusters)} clusters ({algo})")
 
                 # Étape 3 — recodage
-                self._notify_pipeline(3, len(steps), steps[2])
+                self._notify_pp(3, len(steps), steps[2])
                 recode_res = self.model.run_recoding(w_error)
                 if not recode_res.success:
-                    raise RuntimeError(f"Recodage: {recode_res.error}")
+                    raise RuntimeError(f"Recodage : {recode_res.error}")
+                self._notify_pp_result(3, f"{recode_res.num_sequences} séquences")
 
                 # Étape 4 — PrefixSpan
-                self._notify_pipeline(4, len(steps), steps[3])
+                self._notify_pp(4, len(steps), steps[3])
                 mining_res = self.model.run_mining(min_support, max_length)
                 if not mining_res.success:
-                    raise RuntimeError(f"PrefixSpan: {mining_res.error}")
+                    raise RuntimeError(f"PrefixSpan : {mining_res.error}")
+                self._notify_pp_result(
+                    4,
+                    f"{mining_res.num_patterns} motifs",
+                    patterns=mining_res.top_patterns,
+                )
 
-                # Étape 5 — graphe
-                self._notify_pipeline(5, len(steps), steps[4])
-                self.model.generate_transition_graph(mining_res.top_patterns, min_len=2)
+                # Étape 5 — génération des graphes
+                self._notify_pp(5, len(steps), steps[4])
+
+                ok_g, graph_bytes, err_g = self.model.generate_transition_graph(
+                    mining_res.top_patterns, min_len=2
+                )
+                ok_f, freq_bytes, err_f = self.model.generate_frequency_chart(
+                    mining_res.top_patterns
+                )
+
+                self._notify_pp_result(
+                    5,
+                    "Graphes générés",
+                    graph_bytes=graph_bytes if ok_g else b"",
+                    freq_bytes=freq_bytes if ok_f else b"",
+                )
 
                 if self.view:
-                    self.view.after(0, self.view.on_pipeline_done, True, "")
+                    self.view.after(0, self.view.on_pp_done, True, "")
+
             except Exception as e:
                 if self.view:
-                    self.view.after(0, self.view.on_pipeline_done, False, str(e))
+                    self.view.after(0, self.view.on_pp_done, False, str(e))
 
         t = threading.Thread(target=_worker, daemon=True)
         t.start()
 
-    def _notify_pipeline(self, step: int, total: int, label: str):
+    def _notify_pp(self, step: int, total: int, label: str):
         if self.view:
-            self.view.after(0, self.view.on_pipeline_progress, step, total, label)
+            self.view.after(0, self.view.on_pp_progress, step, total, label)
+
+    def _notify_pp_result(self, step: int, message: str, **kwargs):
+        if self.view:
+            self.view.after(0, self.view.on_pp_step_result, step, message, kwargs)

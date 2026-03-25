@@ -17,6 +17,7 @@ from mvc.views.pages import (
     MenuPage,
     MiningPage,
     OverlayPage,
+    PipelinePage,
 )
 from mvc.views.theme import ACCENT, ACCENT2, BG_CARD, BG_DARK, TEXT_DIM, TEXT_LIGHT
 
@@ -58,6 +59,9 @@ class MainWindow(ctk.CTk):
         self._pages["mining"] = MiningPage(
             self.content_frame, controller, self.switch_page
         )
+        self._pages["pipeline"] = PipelinePage(
+            self.content_frame, controller, self.switch_page
+        )
 
         self.switch_page("menu", animate=False)
 
@@ -86,6 +90,7 @@ class MainWindow(ctk.CTk):
             ("Clusters", "cluster"),
             ("Comparaison", "comparison"),
             ("PrefixSpan", "mining"),
+            ("Pipeline", "pipeline"),
         ]
         self._nav_buttons = {}
         for label, page_name in nav_items:
@@ -217,12 +222,19 @@ class MainWindow(ctk.CTk):
         if page:
             page.on_graph_generated(success, image_bytes, error_msg)
 
-    def on_pipeline_progress(self, step, total, label):
-        page = self._pages.get("mining")
+    # ── Pipeline page callbacks ──────────────────────────────────────────
+
+    def on_pp_progress(self, step, total, label):
+        page = self._pages.get("pipeline")
         if page:
             page.on_pipeline_progress(step, total, label)
 
-    def on_pipeline_done(self, success, error_msg):
-        page = self._pages.get("mining")
+    def on_pp_step_result(self, step, message, kwargs):
+        page = self._pages.get("pipeline")
+        if page:
+            page.on_pipeline_step_result(step, message, kwargs)
+
+    def on_pp_done(self, success, error_msg):
+        page = self._pages.get("pipeline")
         if page:
             page.on_pipeline_done(success, error_msg)

@@ -9,7 +9,7 @@ import customtkinter as ctk
 from PIL import Image, ImageTk
 
 from mvc.views.pages.base_page import BasePage
-from mvc.views.theme import ACCENT, ACCENT2, BG_CARD, TEXT_DIM
+from mvc.views.theme import ACCENT, BG_CARD, TEXT_DIM
 
 
 class MiningPage(BasePage):
@@ -40,48 +40,6 @@ class MiningPage(BasePage):
             font=ctk.CTkFont(size=12),
             text_color=TEXT_DIM,
         ).pack(pady=(0, 15))
-
-        # === Section Pipeline One-Click ===
-        pipe_frame = ctk.CTkFrame(self.scroll, fg_color=BG_CARD, corner_radius=12)
-        pipe_frame.pack(padx=30, pady=8, fill="x")
-
-        ctk.CTkLabel(
-            pipe_frame,
-            text="Pipeline complet (one-click)",
-            font=ctk.CTkFont(size=16, weight="bold"),
-        ).pack(pady=(12, 4), padx=20, anchor="w")
-
-        ctk.CTkLabel(
-            pipe_frame,
-            text="Compression → Clustering → Recodage → PrefixSpan → Graphe",
-            font=ctk.CTkFont(size=11),
-            text_color=TEXT_DIM,
-        ).pack(padx=20, anchor="w")
-
-        pipe_row = ctk.CTkFrame(pipe_frame, fg_color="transparent")
-        pipe_row.pack(fill="x", padx=20, pady=8)
-
-        ctk.CTkLabel(pipe_row, text="w_error:", width=60, anchor="w").pack(side="left")
-        self.pipe_w_combo = ctk.CTkComboBox(pipe_row, width=100, values=["12"])
-        self.pipe_w_combo.pack(side="left", padx=5)
-
-        self.pipe_btn = ctk.CTkButton(
-            pipe_row,
-            text="▶  Lancer tout le pipeline",
-            fg_color=ACCENT,
-            hover_color="#c33750",
-            command=self._on_pipeline,
-            width=220,
-        )
-        self.pipe_btn.pack(side="left", padx=15)
-
-        self.pipe_status = ctk.CTkLabel(
-            pipe_frame, text="", font=ctk.CTkFont(size=11), text_color=TEXT_DIM
-        )
-        self.pipe_status.pack(pady=(0, 12), padx=20, anchor="w")
-
-        self.pipe_progress = ctk.CTkProgressBar(pipe_frame, width=400, mode="determinate")
-        self.pipe_progress.set(0)
 
         # === Section Recodage ===
         recode_frame = ctk.CTkFrame(self.scroll, fg_color=BG_CARD, corner_radius=12)
@@ -262,44 +220,11 @@ class MiningPage(BasePage):
             vals = [str(w) for w in w_errors]
             self.w_combo.configure(values=vals)
             self.w_combo.set(str(w_errors[0]))
-            self.pipe_w_combo.configure(values=vals)
-            self.pipe_w_combo.set(str(w_errors[0]))
         else:
             self.w_combo.configure(values=["12"])
             self.w_combo.set("12")
-            self.pipe_w_combo.configure(values=["12"])
-            self.pipe_w_combo.set("12")
 
-    def _on_pipeline(self):
-        """Lance le pipeline complet."""
-        try:
-            w = float(self.pipe_w_combo.get())
-        except ValueError:
-            self.pipe_status.configure(text="Valeur w_error invalide")
-            return
-        try:
-            min_sup = int(self.support_entry.get())
-            max_len = int(self.maxlen_entry.get())
-        except ValueError:
-            min_sup, max_len = 10, 8
-
-        self.pipe_btn.configure(state="disabled", text="Pipeline en cours…")
-        self.pipe_status.configure(text="Démarrage…")
-        self.pipe_progress.pack(pady=(0, 12), padx=20)
-        self.pipe_progress.set(0)
-        self.controller.start_full_pipeline(w, min_sup, max_len)
-
-    def on_pipeline_progress(self, step, total, label):
-        self.pipe_progress.set(step / total)
-        self.pipe_status.configure(text=f"Étape {step}/{total} — {label}…")
-
-    def on_pipeline_done(self, success, error_msg):
-        self.pipe_btn.configure(state="normal", text="▶  Lancer tout le pipeline")
-        self.pipe_progress.set(1.0 if success else 0)
-        self.pipe_progress.pack_forget()
-        if success:
-            self.pipe_status.configure(text="Pipeline terminé avec succès !")
-        else:
+    def _on_recode(self):
             self.pipe_status.configure(text=f"Erreur : {error_msg}")
 
     def _on_recode(self):
