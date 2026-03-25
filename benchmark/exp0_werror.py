@@ -28,6 +28,12 @@ import numpy as np
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
+from benchmark.config import (
+    DATA_DIR, OUTPUT_EXP0 as OUTPUT_DIR,
+    K_DEFAULT as K, MAX_FILES, MIN_LENGTH,
+    N_SUBSAMPLE_DEFAULT as N_SUBSAMPLE, SEEDS_MULTI as SEEDS,
+    W_ERROR_GRID_26 as W_ERROR_GRID,
+)
 from dota_analytics.compression import MDLCompressor
 from dota_analytics.structures import Trajectory, TrajectoryPoint
 
@@ -38,25 +44,6 @@ from sklearn.metrics import (
     silhouette_score,
 )
 from sklearn.preprocessing import StandardScaler
-
-# ═════════════════════════════════════════════════════════════════════════════
-# CONFIGURATION
-# ═════════════════════════════════════════════════════════════════════════════
-
-DATA_DIR = BASE_DIR / "data-dota"
-OUTPUT_DIR = BASE_DIR / "output" / "benchmark_exp0"
-
-K = 12
-MAX_FILES = 30
-MIN_LENGTH = 5.0
-N_SUBSAMPLE = 3000
-SEEDS = list(range(7))
-
-W_ERROR_GRID = [
-    0.1, 0.25, 0.5, 0.75, 1.0, 1.5, 2.0, 3.0, 4.0, 5.0,
-    6.0, 7.0, 8.0, 9.0, 10.0, 12.0, 14.0, 16.0, 18.0, 20.0,
-    25.0, 30.0, 40.0, 50.0, 75.0, 100.0,
-]
 
 CSV_COLUMNS = [
     "w_error", "seed", "nb_segments_total", "nb_segments_sampled",

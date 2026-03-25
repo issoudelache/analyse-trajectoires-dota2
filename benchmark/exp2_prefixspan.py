@@ -37,31 +37,18 @@ import numpy as np
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
+from benchmark.config import (
+    COMPRESSED_DIR, OUTPUT_EXP2 as OUTPUT_DIR,
+    W_ERROR, MAX_FILES, MIN_LENGTH,
+    MIN_SUPPORT, MAX_LENGTH, SEED as SEED_KMEANS,
+    K_GRID_30 as K_GRID,
+)
 from dota_analytics.clustering import load_data
 from dota_analytics.mining import PrefixSpan
 from dota_analytics.recoding import reconstruct_sequences, save_sequences_to_spmf
 
 from sklearn.cluster import MiniBatchKMeans
 from sklearn.preprocessing import StandardScaler
-
-# ═════════════════════════════════════════════════════════════════════════════
-# CONFIGURATION
-# ═════════════════════════════════════════════════════════════════════════════
-
-OUTPUT_DIR = BASE_DIR / "output" / "benchmark_exp2"
-COMPRESSED_DIR = BASE_DIR / "output" / "compressed" / "w_error_12.0"
-
-W_ERROR = 12.0
-MAX_FILES = 30
-MIN_LENGTH = 5.0
-MIN_SUPPORT = 15
-MAX_LENGTH = 5
-SEED_KMEANS = 42
-
-K_GRID = [
-    2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-    18, 20, 22, 25, 28, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100,
-]
 
 CSV_COLUMNS = [
     "k", "nb_segments", "nb_sequences",

@@ -25,6 +25,12 @@ import numpy as np
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
+from benchmark.config import (
+    COMPRESSED_DIR, OUTPUT_EXP1 as OUTPUT_DIR,
+    W_ERROR, MAX_FILES, MIN_LENGTH,
+    N_SUBSAMPLE_EXP1 as N_SUBSAMPLE, SEEDS_MULTI as SEEDS,
+    K_GRID_30 as K_GRID,
+)
 from dota_analytics.clustering import load_data
 
 from sklearn.cluster import MiniBatchKMeans
@@ -34,24 +40,6 @@ from sklearn.metrics import (
     silhouette_score,
 )
 from sklearn.preprocessing import StandardScaler
-
-# ═════════════════════════════════════════════════════════════════════════════
-# CONFIGURATION
-# ═════════════════════════════════════════════════════════════════════════════
-
-OUTPUT_DIR = BASE_DIR / "output" / "benchmark_exp1"
-COMPRESSED_DIR = BASE_DIR / "output" / "compressed" / "w_error_12.0"
-
-W_ERROR = 12.0
-MAX_FILES = 30
-MIN_LENGTH = 5.0
-N_SUBSAMPLE = 5000
-SEEDS = list(range(7))
-
-K_GRID = [
-    2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15, 16,
-    18, 20, 22, 25, 28, 30, 35, 40, 45, 50, 60, 70, 80, 90, 100,
-]
 
 CSV_COLUMNS = [
     "k", "seed", "nb_segments_total", "nb_segments_sampled",

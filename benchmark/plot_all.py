@@ -450,6 +450,8 @@ def main():
                         help="Expériences à tracer (0 1 2). Défaut: toutes")
     parser.add_argument("--output_dir", type=str,
                         default=str(OUTPUT_BASE / "benchmark_figures"))
+    parser.add_argument("--report", action="store_true",
+                        help="Générer aussi les figures de rapport (clustering scalabilité, heatmaps…)")
     args = parser.parse_args()
 
     output_dir = Path(args.output_dir)
@@ -477,6 +479,35 @@ def main():
         plot_synthesis(output_dir)
 
     print(f"\n✓ Toutes les figures générées dans {output_dir}")
+
+    # Figures rapport clustering (scalabilité, heatmaps, etc.)
+    if args.report:
+        print("\n── Figures rapport ──")
+        from benchmark.generate_report_figures import (
+            fig_scalability_fast, fig_scalability_ap, fig_overview_k12,
+            fig_matrix_time, fig_barplot_at_n, fig_boxplots,
+            fig_k_comparison, fig_speedup, fig_heatmap_silhouette,
+            fig_stacked_time, fig_cv_silhouette, fig_db_ch_sensitivity,
+            fig_compression_vs_silhouette, fig_silhouette_vs_k,
+            fig_elbow, fig_combined_optimal_k,
+        )
+        fig_scalability_fast()
+        fig_scalability_ap()
+        fig_overview_k12()
+        fig_matrix_time()
+        fig_barplot_at_n()
+        fig_boxplots()
+        fig_k_comparison()
+        fig_speedup()
+        fig_heatmap_silhouette()
+        fig_stacked_time()
+        fig_cv_silhouette()
+        fig_db_ch_sensitivity()
+        fig_compression_vs_silhouette()
+        fig_silhouette_vs_k()
+        fig_elbow()
+        fig_combined_optimal_k()
+        print("  ✓ Figures rapport générées")
 
 
 if __name__ == "__main__":

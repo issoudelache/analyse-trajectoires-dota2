@@ -37,6 +37,12 @@ import numpy as np
 BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
+from benchmark.config import (
+    COMPRESSED_DIR, CANVAS_PATH, OUTPUT_EXP3 as OUTPUT_DIR,
+    MAX_FILES, MIN_LENGTH, N_SUBSAMPLE_DEFAULT as N_SUBSAMPLE,
+    MIN_SUPPORT, MAX_LENGTH as MAX_LENGTH_PS, SEED,
+    AP_PREFERENCE, AP_DAMPING, AP_MAX_ITER,
+)
 from dota_analytics.clustering import load_data, compute_traclus_similarity
 from dota_analytics.mining import PrefixSpan
 from dota_analytics.recoding import reconstruct_sequences, save_sequences_to_spmf
@@ -48,21 +54,6 @@ from sklearn.metrics import (
     silhouette_score,
 )
 from sklearn.preprocessing import StandardScaler
-
-# ═════════════════════════════════════════════════════════════════════════════
-# CONFIGURATION
-# ═════════════════════════════════════════════════════════════════════════════
-
-OUTPUT_DIR = BASE_DIR / "output" / "benchmark_exp3"
-COMPRESSED_DIR = BASE_DIR / "output" / "compressed" / "w_error_12.0"
-CANVAS_PATH = BASE_DIR / "canvas.png"
-
-MAX_FILES = 30
-MIN_LENGTH = 5.0
-N_SUBSAMPLE = 3000
-MIN_SUPPORT = 15
-MAX_LENGTH_PS = 5
-SEED = 42
 
 
 # ═════════════════════════════════════════════════════════════════════════════
@@ -227,7 +218,36 @@ def main():
     parser.add_argument("--min_support", type=int, default=MIN_SUPPORT)
     parser.add_argument("--max_length", type=int, default=MAX_LENGTH_PS)
     parser.add_argument("--compressed_dir", type=str, default=str(COMPRESSED_DIR))
+    parser.add_argument("--check", action="store_true",
+                        help="Afficher les motifs PrefixSpan depuis le dernier run (sans relancer le pipeline)")
     args = parser.parse_args()
+
+    # ── Mode --check : affiche les motifs à partir des résultats existants ──
+    if args.check:
+        summary_path = OUTPUT_DIR / "exp3_summary.json"
+        spmf_path = OUTPUT_DIR / "sequences_final.spmf"
+        if not summary_path.exists():
+            print(f"ERREUR : {summary_path} introuvable — lancez d'abord sans --check")
+            sys.exit(1)
+        d = json.load(open(summary_path))
+        nb_seq = d.get("nb_sequences", "?")
+        print(f"=== TOP 10 motifs PrefixSpan (AP, N={d.get('nb_segments_sampled','?')}) ===")
+        for i, m in enumerate(d["top10_motifs"]):
+            motif, sup = m["motif"], m["support"]
+            pct = sup / nb_seq * 100 if isinstance(nb_seq, int) else 0
+            print(f"  #{i+1}: [{' -> '.join(str(x) for x in motif)}]  support={sup} ({pct:.1f}%)  len={len(motif)}")
+        if spmf_path.exists():
+            miner = PrefixSpan(min_support=args.min_support, max_length=args.max_length)
+            db = miner.load_spmf(str(spmf_path))
+            patterns = miner.mine(db, parallel=False)
+            multi = [(p, s) for p, s in patterns.items() if len(p) >= 2]
+            multi.sort(key=lambda x: -x[1])
+            print(f"\n=== TOP 20 motifs de longueur >= 2 ===")
+            for i, (p, s) in enumerate(multi[:20]):
+                pct = s / nb_seq * 100 if isinstance(nb_seq, int) else 0
+                print(f"  #{i+1}: [{' -> '.join(str(x) for x in p)}]  support={s} ({pct:.1f}%)  len={len(p)}")
+            print(f"\nTotal motifs: {len(patterns)}, len>=2: {len(multi)}, len>=3: {len([x for x in multi if len(x[0])>=3])}")
+        return
 
     compressed_dir = Path(args.compressed_dir)
     if not compressed_dir.exists():

@@ -1,7 +1,10 @@
 import json, sys
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
-d = json.load(open('output/benchmark_exp3/exp3_summary.json'))
+
+from benchmark.config import OUTPUT_EXP3, MIN_SUPPORT, MAX_LENGTH
+
+d = json.load(open(OUTPUT_EXP3 / 'exp3_summary.json'))
 
 print("=== TOP 10 motifs PrefixSpan (AP, N=3000) ===")
 for i, m in enumerate(d['top10_motifs']):
@@ -14,8 +17,8 @@ for i, m in enumerate(d['top10_motifs']):
 # Now get ALL multi-step motifs (len>=2), sorted by support
 print("\n=== TOP 20 motifs de longueur >= 2 ===")
 from dota_analytics.mining import PrefixSpan
-miner = PrefixSpan(min_support=15, max_length=5)
-db = miner.load_spmf('output/benchmark_exp3/sequences_final.spmf')
+miner = PrefixSpan(min_support=MIN_SUPPORT, max_length=MAX_LENGTH)
+db = miner.load_spmf(str(OUTPUT_EXP3 / 'sequences_final.spmf'))
 patterns = miner.mine(db, parallel=False)
 
 multi = [(p, s) for p, s in patterns.items() if len(p) >= 2]
