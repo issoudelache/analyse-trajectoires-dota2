@@ -187,6 +187,11 @@ class MainWindow(ctk.CTk):
         if page:
             page.on_cluster_loaded(data)
 
+    def on_all_clusters_loaded(self, data):
+        page = self._pages.get("cluster")
+        if page:
+            page.on_all_clusters_loaded(data)
+
     def on_clustering_done(self, success, error_msg):
         page = self._pages.get("cluster")
         if page:
@@ -211,3 +216,13 @@ class MainWindow(ctk.CTk):
         page = self._pages.get("mining")
         if page:
             page.on_graph_generated(success, image_bytes, error_msg)
+
+    def on_pipeline_progress(self, step, total, label):
+        page = self._pages.get("mining")
+        if page:
+            page.on_pipeline_progress(step, total, label)
+
+    def on_pipeline_done(self, success, error_msg):
+        page = self._pages.get("mining")
+        if page:
+            page.on_pipeline_done(success, error_msg)

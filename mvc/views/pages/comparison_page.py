@@ -16,14 +16,17 @@ class ComparisonPage(BasePage):
     _SPEED_MAP = {"×0.5": 0.5, "×1": 1.0, "×2": 2.0, "×4": 4.0}
     _BASE_TICK_STEP = 300
     PLAY_INTERVAL_MS = 50
+    _TICK_JUMP = 1000  # ticks par flèche clavier
 
     def __init__(self, master, controller, switch_page_cb):
         super().__init__(master, controller)
         self.switch_page = switch_page_cb
         self._playing = False
+        self._paused = False
         self._comparison_data = None
         self._speed = 1.0
         self._build()
+        self._bind_keys()
 
     def _build(self):
         # ── Barre d'options + vitesse ────────────────────────────────────
@@ -75,6 +78,16 @@ class ComparisonPage(BasePage):
             command=self._on_speed_change,
         )
         speed_menu.pack(side="left", padx=5)
+
+        self.export_btn = ctk.CTkButton(
+            top,
+            text="Exporter JPG",
+            fg_color="#0f3460",
+            hover_color="#1a4a80",
+            command=self._on_export,
+            width=110,
+        )
+        self.export_btn.pack(side="left", padx=(15, 5))
 
         # ── Légende horizontale compacte ─────────────────────────────────
         legend_bar = ctk.CTkFrame(self, fg_color=BG_CARD, corner_radius=8, height=28)
@@ -271,11 +284,13 @@ class ComparisonPage(BasePage):
         self.map_compressed.set_tick(tick)
         self._refresh_stats()
 
-    # ── Play / Stop ──────────────────────────────────────────────────────
+    # ── Play / Pause / Stop ────────────────────────────────────────────
 
     def _toggle_play(self):
-        if self._playing:
-            self._stop_play()
+        if self._playing and not self._paused:
+            self._pause_play()
+        elif self._paused:
+            self._resume_play()
         else:
             self._start_play()
 
@@ -283,15 +298,26 @@ class ComparisonPage(BasePage):
         if self._comparison_data is None:
             return
         self._playing = True
-        self.play_btn.configure(text="⏹  Stop", fg_color="#c33750")
+        self._paused = False
+        self.play_btn.configure(text="⏸  Pause", fg_color="#f39c12")
+        self._play_tick()
+
+    def _pause_play(self):
+        self._paused = True
+        self.play_btn.configure(text="▶  Reprendre", fg_color="#27ae60")
+
+    def _resume_play(self):
+        self._paused = False
+        self.play_btn.configure(text="⏸  Pause", fg_color="#f39c12")
         self._play_tick()
 
     def _stop_play(self):
         self._playing = False
+        self._paused = False
         self.play_btn.configure(text="▶  Play", fg_color=ACCENT)
 
     def _play_tick(self):
-        if not self._playing or self._comparison_data is None:
+        if not self._playing or self._paused or self._comparison_data is None:
             return
         current = int(float(self.tick_slider.get()))
         step = int(self._BASE_TICK_STEP * self._speed)
@@ -303,8 +329,54 @@ class ComparisonPage(BasePage):
         self.tick_slider.set(new_tick)
         self._on_slider(new_tick)
 
-        if self._playing:
+        if self._playing and not self._paused:
             self.after(self.PLAY_INTERVAL_MS, self._play_tick)
+
+    # ── Keyboard shortcuts ───────────────────────────────────────────────
+
+    def _bind_keys(self):
+        root = self.winfo_toplevel()
+        root.bind("<space>", self._on_space)
+        root.bind("<Left>", self._on_left)
+        root.bind("<Right>", self._on_right)
+
+    def _on_space(self, event=None):
+        self._toggle_play()
+
+    def _on_left(self, event=None):
+        if self._comparison_data is None:
+            return
+        current = int(float(self.tick_slider.get()))
+        new_tick = max(self._comparison_data.min_tick, current - self._TICK_JUMP)
+        self.tick_slider.set(new_tick)
+        self._on_slider(new_tick)
+
+    def _on_right(self, event=None):
+        if self._comparison_data is None:
+            return
+        current = int(float(self.tick_slider.get()))
+        new_tick = min(self._comparison_data.max_tick, current + self._TICK_JUMP)
+        self.tick_slider.set(new_tick)
+        self._on_slider(new_tick)
+
+    # ── Export JPG ───────────────────────────────────────────────────────
+
+    def _on_export(self):
+        if self._comparison_data is None:
+            return
+        from mvc.config import OUTPUT_DIR
+
+        out_dir = OUTPUT_DIR / "exports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        tick = int(float(self.tick_slider.get()))
+        mid = self._comparison_data.match_id
+
+        path_raw = out_dir / f"comparison_raw_{mid}_t{tick}.jpg"
+        path_comp = out_dir / f"comparison_compressed_{mid}_t{tick}.jpg"
+        self.map_raw.export_to_jpg(str(path_raw))
+        self.map_compressed.export_to_jpg(str(path_comp))
+        self.export_btn.configure(text="Exporté !", fg_color="#27ae60")
+        self.after(1500, lambda: self.export_btn.configure(text="Exporter JPG", fg_color="#0f3460"))
 
     # ── Stats ────────────────────────────────────────────────────────────
 

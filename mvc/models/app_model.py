@@ -411,6 +411,73 @@ class AppModel:
             total_in_cluster=len(drawn),
         )
 
+    # ── all clusters visu ───────────────────────────────────────────────
+
+    # Colormap distincte pour la vue "tous les clusters"
+    _ALL_CLUSTER_COLORS = [
+        "#e6194b", "#3cb44b", "#ffe119", "#4363d8", "#f58231",
+        "#911eb4", "#42d4f4", "#f032e6", "#bfef45", "#fabed4",
+        "#469990", "#dcbeff", "#9A6324", "#800000", "#aaffc3",
+        "#808000", "#ffd8b1", "#000075", "#a9a9a9", "#e6beff",
+    ]
+
+    def load_all_clusters_visu_data(
+        self, w_error: float, cluster_ids: List[int]
+    ) -> Optional[ClusterVisuData]:
+        """Charge TOUS les clusters et retourne les segments avec couleurs distinctes."""
+        folder = self._resolve_w_error_folder(w_error)
+        if folder is None:
+            return None
+        clusters_file = self._find_clusters_file(w_error)
+        if clusters_file is None:
+            return None
+
+        with open(clusters_file) as f:
+            match_clusters = json.load(f)
+
+        # Grouper les segments par cluster
+        cluster_segs: Dict[int, list] = {cid: [] for cid in cluster_ids}
+        for mid, segs_dict in match_clusters.items():
+            for seg_id, label in segs_dict.items():
+                lbl = int(label)
+                if lbl in cluster_segs:
+                    cluster_segs[lbl].append((mid, seg_id))
+
+        # Charger les coordonnées et assigner une couleur par cluster
+        drawn = []
+        palette = self._ALL_CLUSTER_COLORS
+        for idx, cid in enumerate(cluster_ids):
+            color = palette[idx % len(palette)]
+            for mid, seg_id in cluster_segs[cid]:
+                json_path = folder / f"{mid}_compressed.json"
+                if not json_path.exists():
+                    continue
+                with open(json_path) as f:
+                    data = json.load(f)
+                parts = seg_id.split("_")
+                pid = int(parts[0][1:])
+                seg_idx = int(parts[1])
+                for player in data["players"]:
+                    if player["player_id"] == pid and seg_idx < len(player["segments"]):
+                        s = player["segments"][seg_idx]
+                        drawn.append((
+                            s["start"]["x"], s["start"]["y"],
+                            s["end"]["x"], s["end"]["y"],
+                            color,
+                        ))
+                        break
+
+        canvas_img = self._load_canvas_image()
+        if canvas_img is None:
+            return None
+
+        return ClusterVisuData(
+            canvas_image=canvas_img,
+            segments=drawn,
+            cluster_id=-1,
+            total_in_cluster=len(drawn),
+        )
+
     # ── clustering (délègue à dota_analytics) ────────────────────────────
 
     def run_clustering(self, w_error: float, **kwargs):

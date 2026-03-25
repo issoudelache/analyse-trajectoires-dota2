@@ -57,6 +57,16 @@ class OverlayPage(BasePage):
         )
         self.load_btn.pack(side="left", padx=15)
 
+        self.export_btn = ctk.CTkButton(
+            top,
+            text="Exporter JPG",
+            fg_color="#0f3460",
+            hover_color="#1a4a80",
+            command=self._on_export,
+            width=110,
+        )
+        self.export_btn.pack(side="left", padx=5)
+
         # ── Zone centrale : carte + panneau latéral ──────────────────────
         mid = ctk.CTkFrame(self, fg_color="transparent")
         mid.pack(fill="both", expand=True, padx=10, pady=5)
@@ -72,7 +82,7 @@ class OverlayPage(BasePage):
         right.grid(row=0, column=1, sticky="ns", padx=(6, 0))
         right.grid_propagate(False)
 
-        self.legend = PlayerLegend(right)
+        self.legend = PlayerLegend(right, on_toggle_callback=self._on_player_toggle)
         self.legend.pack(fill="x", pady=(0, 6))
 
         self.stats_panel = StatsPanel(right)
@@ -147,6 +157,22 @@ class OverlayPage(BasePage):
         self.tick_label.configure(text=f"tick: {tick}")
         self.map_canvas.set_tick(tick)
         self._refresh_stats()
+
+    def _on_player_toggle(self, pid, visible):
+        self.map_canvas.set_player_visibility(pid, visible)
+
+    def _on_export(self):
+        if self._overlay_data is None:
+            return
+        from mvc.config import OUTPUT_DIR
+
+        out_dir = OUTPUT_DIR / "exports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        tick = int(float(self.tick_slider.get()))
+        path = out_dir / f"overlay_{self._overlay_data.match_id}_t{tick}.jpg"
+        self.map_canvas.export_to_jpg(str(path))
+        self.export_btn.configure(text="Exporté !", fg_color="#27ae60")
+        self.after(1500, lambda: self.export_btn.configure(text="Exporter JPG", fg_color="#0f3460"))
 
     def _refresh_stats(self):
         self.stats_panel.update_from(self.map_canvas.get_stats())

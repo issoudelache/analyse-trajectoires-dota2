@@ -450,6 +450,77 @@ class DotaMapCanvas(ctk.CTkFrame):
                 tags="trail",
             )
 
+    # ── Player visibility toggle ────────────────────────────────────────
+
+    def set_player_visibility(self, pid: int, visible: bool):
+        """Affiche ou masque tous les éléments d'un joueur."""
+        state = "normal" if visible else "hidden"
+        if pid in self._line_ids:
+            vis_n = self._vis_count.get(pid, 0)
+            for i in range(vis_n):
+                self.canvas.itemconfigure(self._line_ids[pid][i], state=state)
+        if pid in self._head_ids:
+            self.canvas.itemconfigure(self._head_ids[pid], state="hidden" if not visible else self.canvas.itemcget(self._head_ids[pid], "state"))
+        if pid in self._dot_ids:
+            self.canvas.itemconfigure(self._dot_ids[pid], state="hidden" if not visible else self.canvas.itemcget(self._dot_ids[pid], "state"))
+
+    # ── Export JPG ────────────────────────────────────────────────────────
+
+    def export_to_jpg(self, filepath: str):
+        """Exporte le contenu visible du canvas en fichier JPG."""
+        import io
+        from PIL import Image as PILImage
+
+        self.canvas.update_idletasks()
+        cw = self.canvas.winfo_width()
+        ch = self.canvas.winfo_height()
+        if cw < 10 or ch < 10:
+            return
+
+        # Recréer l'image à partir du fond + segments visibles
+        img = PILImage.new("RGB", (cw, ch), "#0d0d0d")
+
+        # Dessiner le fond
+        if self._canvas_img and self._map_size > 10:
+            bg = self._canvas_img.resize(
+                (self._map_size, self._map_size), PILImage.LANCZOS
+            )
+            img.paste(bg, (self._ox, self._oy))
+
+        # Dessiner les lignes visibles
+        from PIL import ImageDraw
+
+        draw = ImageDraw.Draw(img)
+        for pid, ids in self._line_ids.items():
+            color = PLAYER_COLORS[pid % len(PLAYER_COLORS)]
+            vis_n = self._vis_count.get(pid, 0)
+            lines = self._lines.get(pid, [])
+            for i in range(vis_n):
+                x1, y1, x2, y2 = lines[i][0], lines[i][1], lines[i][2], lines[i][3]
+                draw.line(
+                    [
+                        (self._gx(x1), self._gy(y1)),
+                        (self._gx(x2), self._gy(y2)),
+                    ],
+                    fill=color,
+                    width=2,
+                )
+
+        # Fallback pour draw_raw_segments (cluster mode)
+        if self._draw_mode == "none":
+            items = self.canvas.find_withtag("trail")
+            for item_id in items:
+                coords = self.canvas.coords(item_id)
+                if len(coords) >= 4:
+                    fill = self.canvas.itemcget(item_id, "fill")
+                    draw.line(
+                        [(coords[0], coords[1]), (coords[2], coords[3])],
+                        fill=fill or "white",
+                        width=2,
+                    )
+
+        img.save(filepath, "JPEG", quality=95)
+
     # ── Stats helper ─────────────────────────────────────────────────────
 
     def get_stats(self) -> dict:

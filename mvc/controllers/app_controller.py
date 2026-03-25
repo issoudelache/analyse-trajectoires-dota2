@@ -95,6 +95,20 @@ class AppController:
         t = threading.Thread(target=_worker, daemon=True)
         t.start()
 
+    def load_all_clusters_visu(self, w_error: float, cluster_ids: list):
+        """Charge tous les clusters avec couleurs distinctes (thread)."""
+
+        def _worker():
+            try:
+                data = self.model.load_all_clusters_visu_data(w_error, cluster_ids)
+            except Exception:
+                data = None
+            if self.view:
+                self.view.after(0, self.view.on_all_clusters_loaded, data)
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+
     # ── clustering ───────────────────────────────────────────────────────
 
     def load_comparison(self, w_error: float, match_id: str):
@@ -196,3 +210,55 @@ class AppController:
 
         t = threading.Thread(target=_worker, daemon=True)
         t.start()
+
+    # ── Pipeline complet (one-click) ─────────────────────────────────────
+
+    def start_full_pipeline(self, w_error: float, min_support: int = 10, max_length: int = 8):
+        """Lance le pipeline complet dans un thread :
+        compression → clustering → recodage → PrefixSpan → graphe."""
+
+        def _worker():
+            steps = [
+                "Compression",
+                "Clustering",
+                "Recodage",
+                "PrefixSpan",
+                "Graphe de transitions",
+            ]
+            try:
+                # Étape 1 — compression
+                self._notify_pipeline(1, len(steps), steps[0])
+                self.model.compress(w_error)
+
+                # Étape 2 — clustering
+                self._notify_pipeline(2, len(steps), steps[1])
+                self.model.run_clustering(w_error)
+
+                # Étape 3 — recodage
+                self._notify_pipeline(3, len(steps), steps[2])
+                recode_res = self.model.run_recoding(w_error)
+                if not recode_res.success:
+                    raise RuntimeError(f"Recodage: {recode_res.error}")
+
+                # Étape 4 — PrefixSpan
+                self._notify_pipeline(4, len(steps), steps[3])
+                mining_res = self.model.run_mining(min_support, max_length)
+                if not mining_res.success:
+                    raise RuntimeError(f"PrefixSpan: {mining_res.error}")
+
+                # Étape 5 — graphe
+                self._notify_pipeline(5, len(steps), steps[4])
+                self.model.generate_transition_graph(mining_res.top_patterns, min_len=2)
+
+                if self.view:
+                    self.view.after(0, self.view.on_pipeline_done, True, "")
+            except Exception as e:
+                if self.view:
+                    self.view.after(0, self.view.on_pipeline_done, False, str(e))
+
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+
+    def _notify_pipeline(self, step: int, total: int, label: str):
+        if self.view:
+            self.view.after(0, self.view.on_pipeline_progress, step, total, label)

@@ -65,6 +65,26 @@ class ClusterPage(BasePage):
         )
         self.new_cluster_btn.pack(side="left", padx=5)
 
+        self.export_btn = ctk.CTkButton(
+            top,
+            text="Exporter JPG",
+            fg_color=ACCENT2,
+            hover_color="#1a4a80",
+            command=self._on_export,
+            width=110,
+        )
+        self.export_btn.pack(side="left", padx=5)
+
+        self.all_clusters_btn = ctk.CTkButton(
+            top,
+            text="Tous les clusters",
+            fg_color=ACCENT2,
+            hover_color="#1a4a80",
+            command=self._on_show_all_clusters,
+            width=130,
+        )
+        self.all_clusters_btn.pack(side="left", padx=5)
+
         self.info_label = ctk.CTkLabel(
             top,
             text="",
@@ -143,6 +163,10 @@ class ClusterPage(BasePage):
         )
         self.cluster_log.pack(pady=10)
 
+        self.cluster_progress = ctk.CTkProgressBar(
+            self.no_cluster_frame, width=400, mode="indeterminate"
+        )
+
         self.map_canvas = DotaMapCanvas(self, show_dots=False)
 
     def on_show(self):
@@ -193,10 +217,14 @@ class ClusterPage(BasePage):
         algo = self.algo_var.get()
         self.run_cluster_btn.configure(state="disabled", text="En cours…")
         self.cluster_log.configure(text="Clustering en cours, veuillez patienter…")
+        self.cluster_progress.pack(pady=(0, 10))
+        self.cluster_progress.start()
         self.controller.start_clustering(w, algo=algo, max_files=max_f, n_clusters=n_c)
 
     def on_clustering_done(self, success, error_msg):
         self.run_cluster_btn.configure(state="normal", text="Lancer Clustering")
+        self.cluster_progress.stop()
+        self.cluster_progress.pack_forget()
         if success:
             self.cluster_log.configure(text="Clustering terminé ! Rechargement…")
             self._on_w_error_change(self.w_error_var.get())
@@ -222,3 +250,39 @@ class ClusterPage(BasePage):
         self.info_label.configure(
             text=f"Cluster #{data.cluster_id} — {data.total_in_cluster} segments"
         )
+
+    def on_all_clusters_loaded(self, data):
+        """Callback pour la vue tous-clusters."""
+        self.load_btn.configure(state="normal", text="Afficher")
+        if data is None:
+            self.info_label.configure(text="Erreur chargement tous clusters")
+            return
+        self.map_canvas.set_background(data.canvas_image)
+        self.map_canvas.draw_raw_segments(data.segments)
+        self.info_label.configure(
+            text=f"Tous les clusters — {data.total_in_cluster} segments"
+        )
+
+    def _on_export(self):
+        from mvc.config import OUTPUT_DIR
+
+        out_dir = OUTPUT_DIR / "exports"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        cid = self.cluster_var.get()
+        path = out_dir / f"cluster_{cid}.jpg"
+        self.map_canvas.export_to_jpg(str(path))
+        self.export_btn.configure(text="Exporté !", fg_color="#27ae60")
+        self.after(1500, lambda: self.export_btn.configure(text="Exporter JPG", fg_color=ACCENT2))
+
+    def _on_show_all_clusters(self):
+        """Affiche tous les clusters sur la carte avec couleurs distinctes."""
+        try:
+            w = float(self.w_error_var.get())
+        except ValueError:
+            return
+        clusters = self.controller.get_available_clusters(w)
+        if not clusters:
+            return
+        self.load_btn.configure(state="disabled", text="Chargement…")
+        self.info_label.configure(text="Chargement de tous les clusters…")
+        self.controller.load_all_clusters_visu(w, clusters)
