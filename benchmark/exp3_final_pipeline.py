@@ -5,14 +5,14 @@ EXP. 3 — Pipeline final + Analyse qualitative.
 Question : Quelles régularités dans les trajectoires sont
            caractéristiques de comportements stratégiques des joueurs ?
 
-Fixé  : w_error=12.0, k=k* (passé en argument), algo=kmedoids (PAM),
+Fixé  : w_error=12.0, algo=Affinity Propagation (preference=min),
         max_files=30, min_length=5.0, N=3000, min_support=15, max_length=5,
         seed=42
 
 Pipeline :
   1. Charger segments, tirer 3000
-  2. Matrice de distance TRACLUS
-  3. KMedoids(k*, seed=42) → labels + médoïdes
+  2. Matrice de similarité TRACLUS
+  3. AffinityPropagation(preference=min) → labels + exemplaires
   4. Recoder → séquences SPMF
   5. PrefixSpan → motifs
   6. Graphe de Markov → visualisation
@@ -38,10 +38,10 @@ BASE_DIR = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(BASE_DIR))
 
 from dota_analytics.clustering import load_data, compute_traclus_similarity
-from dota_analytics.custom_kmedoids import CustomKMedoids
 from dota_analytics.mining import PrefixSpan
 from dota_analytics.recoding import reconstruct_sequences, save_sequences_to_spmf
 
+from sklearn.cluster import AffinityPropagation
 from sklearn.metrics import (
     calinski_harabasz_score,
     davies_bouldin_score,
@@ -105,7 +105,7 @@ def plot_clusters_on_map(segments, labels, medoid_indices, k, output_path, canva
     cmap = matplotlib.colormaps.get_cmap("tab10").resampled(k)
 
     fig, ax = plt.subplots(figsize=(12, 12))
-    fig.subplots_adjust(left=0, right=1, top=0.94, bottom=0)
+    fig.subplots_adjust(left=0, right=1, top=1, bottom=0)
     ax.imshow(canvas, extent=[0, 256, 0, 256], origin="upper", aspect="equal")
 
     # Dessiner les segments non-médoïdes (fins, très transparents)
@@ -144,10 +144,8 @@ def plot_clusters_on_map(segments, labels, medoid_indices, k, output_path, canva
 
     ax.set_xlim(0, 256)
     ax.set_ylim(0, 256)
-    ax.set_title(f"Clusters K-Médoïdes (k={k}) — segments colorés par cluster",
-                 fontsize=15, fontweight="bold", pad=10)
     ax.axis("off")
-    fig.savefig(output_path, dpi=200, bbox_inches="tight", pad_inches=0.1)
+    fig.savefig(output_path, dpi=200, bbox_inches="tight", pad_inches=0)
     plt.close(fig)
     print(f"  → Figure sauvegardée : {output_path}")
 
@@ -221,9 +219,9 @@ def plot_markov_graph(patterns, min_support, output_path):
 # ═════════════════════════════════════════════════════════════════════════════
 
 def main():
-    parser = argparse.ArgumentParser(description="Exp. 3 — Pipeline final")
-    parser.add_argument("--k", type=int, required=True,
-                        help="k* optimal (déterminé par Exp. 1 + Exp. 2)")
+    parser = argparse.ArgumentParser(description="Exp. 3 — Pipeline final (AP)")
+    parser.add_argument("--k", type=int, default=None,
+                        help="Ignoré (AP détermine k automatiquement)")
     parser.add_argument("--max_files", type=int, default=MAX_FILES)
     parser.add_argument("--n_subsample", type=int, default=N_SUBSAMPLE)
     parser.add_argument("--min_support", type=int, default=MIN_SUPPORT)
@@ -231,18 +229,17 @@ def main():
     parser.add_argument("--compressed_dir", type=str, default=str(COMPRESSED_DIR))
     args = parser.parse_args()
 
-    k = args.k
     compressed_dir = Path(args.compressed_dir)
     if not compressed_dir.exists():
         print(f"ERREUR : dossier compressé introuvable : {compressed_dir}")
         sys.exit(1)
 
     OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    summary = {"k": k, "seed": SEED, "timings": {}, "metrics": {}}
+    summary = {"algo": "AffinityPropagation", "seed": SEED, "timings": {}, "metrics": {}}
     t_global = time.perf_counter()
 
     # ── 1. Charger segments ───────────────────────────────────────────────
-    print(f"Exp. 3 — Pipeline final avec k={k}")
+    print("Exp. 3 — Pipeline final avec Affinity Propagation")
     print(f"  Chargement des segments depuis {compressed_dir}…")
     segments_all, metadata_all = load_data(
         str(compressed_dir), max_files=args.max_files, min_length=MIN_LENGTH,
@@ -265,27 +262,32 @@ def main():
     print(f"  → {n_seg} segments après sous-échantillonnage")
     summary["nb_segments_sampled"] = n_seg
 
-    # ── 2. Matrice de distance TRACLUS ────────────────────────────────────
+    # ── 2. Matrice de similarité TRACLUS ──────────────────────────────────
     print("  Calcul de la matrice TRACLUS…")
     t0 = time.perf_counter()
     similarity_matrix = compute_traclus_similarity(segments)
-    distance_matrix = -similarity_matrix
-    np.fill_diagonal(distance_matrix, 0.0)
     t_traclus = time.perf_counter() - t0
     print(f"  → Matrice {n_seg}×{n_seg} calculée en {t_traclus:.1f}s")
     summary["timings"]["traclus_matrix_s"] = t_traclus
 
-    # ── 3. K-Médoïdes (PAM) ──────────────────────────────────────────────
-    print(f"  K-Médoïdes PAM (k={k})…")
+    # ── 3. Affinity Propagation ───────────────────────────────────────────
+    print("  Affinity Propagation (preference=-5000)…")
     t0 = time.perf_counter()
-    kmed = CustomKMedoids(n_clusters=k, max_iter=300, random_state=SEED)
-    kmed.fit(distance_matrix)
-    labels = kmed.labels_
-    medoid_indices = kmed.medoid_indices_
-    t_kmedoids = time.perf_counter() - t0
-    n_clusters_eff = len(np.unique(labels))
-    print(f"  → {n_clusters_eff} clusters, {len(medoid_indices)} médoïdes, {t_kmedoids:.1f}s")
-    summary["timings"]["kmedoids_s"] = t_kmedoids
+    ap = AffinityPropagation(
+        affinity="precomputed",
+        preference=-5000.0,
+        random_state=SEED,
+        max_iter=500,
+        damping=0.7,
+    )
+    labels = ap.fit_predict(similarity_matrix)
+    medoid_indices = ap.cluster_centers_indices_
+    t_ap = time.perf_counter() - t0
+    k = len(np.unique(labels))
+    n_clusters_eff = k
+    print(f"  → {n_clusters_eff} clusters, {len(medoid_indices)} exemplaires, {t_ap:.1f}s")
+    summary["timings"]["affinity_propagation_s"] = t_ap
+    summary["k"] = k
     summary["n_clusters_effective"] = n_clusters_eff
     summary["medoid_indices"] = [int(m) for m in medoid_indices]
 
