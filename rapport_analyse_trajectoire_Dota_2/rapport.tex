@@ -66,21 +66,25 @@
 % ==========================================
 \section{Introduction}
 
+\subsection{Description Générale du Projet}
+
 L'avènement de l'e-sport (sport électronique) a généré des volumes de données sans précédent. Dans des jeux compétitifs complexes comme \textit{DotA 2} (Defense of the Ancients 2), chaque partie génère des dizaines de milliers de points de données spatio-temporelles, reflétant les moindres clics et déplacements des joueurs. Si ces données brutes sont massivement stockées, leur exploitation stratégique reste un défi majeur pour les analystes et les équipes professionnelles.
 
 Ce projet s'inscrit dans cette dynamique d'analyse automatique de données de jeu appliquée à l'e-sport. Notre objectif est de concevoir et d'implémenter une chaîne de traitement algorithmique capable d'ingérer les trajectoires brutes des joueurs pour en extraire des régularités de mouvement et des stratégies partielles interprétables. 
 
-Ce rapport détaillera l'intégralité de notre démarche. Après avoir exposé les objectifs et la problématique du projet (Section 2), nous présenterons l'architecture de notre chaîne de traitement (Section 3) ainsi que les éléments techniques et algorithmiques qui la composent (Section 4). Nous consacrerons ensuite une large partie à l'évaluation expérimentale de nos modèles, de la compression géométrique (Section 5) au clustering spatial (Section 6), jusqu'à l'extraction finale des motifs stratégiques (Section 7). Enfin, nous conclurons sur les apports de ce projet et ses perspectives d'évolution (Section 8).
+\subsection{Plan du Rapport}
+
+Ce rapport détaillera l'intégralité de notre démarche. Après avoir exposé les objectifs et la problématique du projet (Section 2), nous décrirons les fonctionnalités implémentées et l'organisation de l'équipe (Section 3). Nous présenterons ensuite les éléments techniques et algorithmiques (Section 4) ainsi que l'architecture logicielle du système (Section 5). Nous consacrerons une large partie à l'évaluation expérimentale de nos modèles --- de la compression géométrique au clustering spatial, jusqu'à l'extraction finale des motifs stratégiques (Section 6). Enfin, nous conclurons sur les apports de ce projet et ses perspectives d'évolution (Section 7).
 
 % ==========================================
-% SECTION 2 : OBJECTIFS ET PROBLÉMATIQUE
+% SECTION 2 : OBJECTIFS DU PROJET
 % ==========================================
-\section{Objectifs du projet}
+\section{Objectifs du Projet}
 
-\subsection{Contexte métier : Le jeu DotA 2}
+\subsection{Contexte Métier : Le Jeu DotA 2}
 \textit{DotA 2} est un jeu vidéo de type MOBA (Multiplayer Online Battle Arena). Deux équipes de cinq joueurs s'affrontent sur une carte fermée et asymétrique, composée de trois voies principales (les \textit{Lanes}), séparées par une rivière et des zones de forêts (la \textit{Jungle}). L'objectif est de détruire la base adverse. La victoire repose non seulement sur les réflexes mécaniques (micro-gestion), mais surtout sur la prise de décision globale, les déplacements coordonnés et le contrôle de la carte (macro-gestion).
 
-\subsection{La problématique de l'analyse de trajectoires}
+\subsection{La Problématique de l'Analyse de Trajectoires}
 La donnée brute dont nous disposons est un flux continu de coordonnées $(X, Y)$ enregistrées à intervalles réguliers (les \textit{ticks}). Cette donnée pose trois problèmes majeurs :
 \begin{enumerate}
     \item \textbf{Le volume :} Une partie génère des millions de points.
@@ -88,7 +92,18 @@ La donnée brute dont nous disposons est un flux continu de coordonnées $(X, Y)
     \item \textbf{L'absence de sémantique :} Un point $(120, 115)$ n'a aucun sens stratégique pour une machine.
 \end{enumerate}
 
-\subsection{État de l'art et Travaux existants}
+L'objectif fondamental de ce projet est donc de répondre à la question scientifique suivante : \textbf{Comment transformer de manière non supervisée un volume massif de micro-clics erratiques en un alphabet de comportements locaux (ganks, farming, rotations) compréhensible par un analyste humain ?}
+
+\subsection{Points-Clés et Grandes Étapes}
+
+Le cœur mathématique du projet repose sur un pipeline de données séquentiel en trois phases :
+\begin{enumerate}
+    \item \textbf{Phase 1 - Compression (MDL) :} Nettoyage des nuages de points erratiques pour extraire des segments de droites directionnels.
+    \item \textbf{Phase 2 - Discrétisation Spatiale (TRACLUS + AP) :} Calcul de la matrice de similarité entre les segments, puis clustering pour découvrir les "Macro-Zones" de la carte.
+    \item \textbf{Phase 3 - Extraction Sémantique (PrefixSpan) :} Recodage des trajectoires en séquences d'états (via Run-Length Encoding) et fouille de motifs fréquents pour identifier les véritables stratégies (ex: zone A $\rightarrow$ zone B $\rightarrow$ zone C).
+\end{enumerate}
+
+\subsection{Travaux Existants et Positionnement}
 
 L'analyse des déplacements dans les jeux vidéo compétitifs a fait l'objet de plusieurs approches académiques dans le domaine du \textit{Game Analytics} \cite{drachen}. Pour extraire de l'information stratégique à partir de coordonnées spatiales, la littérature s'appuie généralement sur trois grandes méthodologies, qui présentent cependant certaines limites face à la complexité de \textit{DotA 2} :
 
@@ -107,26 +122,14 @@ L'analyse des déplacements dans les jeux vidéo compétitifs a fait l'objet de 
 Notre projet se démarque de ces approches par la conception d'un pipeline \textbf{hybride et totalement guidé par la donnée (\textit{data-driven})}. 
 Pour contourner les limites du DTW et de l'échantillonnage classique, nous nous appuyons sur le paradigme \textit{Partition-and-Group} introduit par Lee et al. \cite{lee2007}. Nous supprimons le bruit en amont via leur algorithme de compression géométrique \textbf{MDL}. Ensuite, contrairement au découpage arbitraire en grille, notre zonage est découvert dynamiquement de manière non supervisée par l'algorithme \textbf{Affinity Propagation} combiné à la distance experte \textbf{TRACLUS} \cite{lee2007}. Enfin, l'application de l'algorithme \textbf{PrefixSpan}, formalisé par Pei et al. \cite{pei2001}, sur cet alphabet purifié permet de retrouver la dynamique temporelle perdue par les simples \textit{Heatmaps}.
 
-L'objectif fondamental de ce projet est donc de répondre à la question scientifique suivante : \textbf{Comment transformer de manière non supervisée un volume massif de micro-clics erratiques en un alphabet de comportements locaux (ganks, farming, rotations) compréhensible par un analyste humain ?}
-
 % ==========================================
-% SECTION 3 : ARCHITECTURE LOGICIELLE ET FONCTIONNALITÉS
+% SECTION 3 : FONCTIONNALITÉS IMPLÉMENTÉES
 % ==========================================
-\section{Architecture Logicielle et Fonctionnalités}
+\section{Fonctionnalités Implémentées}
 
-Afin de répondre à notre problématique, nous avons conçu une application modulaire et robuste, séparant strictement la logique algorithmique de l'interface utilisateur.
+Le projet a été développé pour être utilisable à la fois par des ingénieurs (via une CLI offrant 11 commandes d'automatisation et de batching) et par des analystes finaux via une Interface Graphique (GUI) avancée (v1.1.0).
 
-\subsection{Le Pipeline de Traitement Stratégique}
-Le cœur mathématique du projet repose sur un pipeline de données séquentiel en trois phases :
-\begin{enumerate}
-    \item \textbf{Phase 1 - Compression (MDL) :} Nettoyage des nuages de points erratiques pour extraire des segments de droites directionnels.
-    \item \textbf{Phase 2 - Discrétisation Spatiale (TRACLUS + AP) :} Calcul de la matrice de similarité entre les segments, puis clustering pour découvrir les "Macro-Zones" de la carte.
-    \item \textbf{Phase 3 - Extraction Sémantique (PrefixSpan) :} Recodage des trajectoires en séquences d'états (via Run-Length Encoding) et fouille de motifs fréquents pour identifier les véritables stratégies (ex: zone A $\rightarrow$ zone B $\rightarrow$ zone C).
-\end{enumerate}
-
-\subsection{Fonctionnalités de l'Application : Dota 2 Trajectory Analyzer}
-
-Le projet a été développé pour être utilisable à la fois par des ingénieurs (via une CLI offrant 11 commandes d'automatisation et de batching) et par des analystes finaux via une Interface Graphique (GUI) avancée (v1.1.0). 
+\subsection{Description des Fonctionnalités}
 
 Conçue avec le framework \textit{CustomTkinter} selon le patron de conception MVC (Modèle-Vue-Contrôleur), l'application propose un environnement ergonomique structuré autour de 7 modules interactifs :
 
@@ -139,60 +142,34 @@ Conçue avec le framework \textit{CustomTkinter} selon le patron de conception M
     
     \item \textbf{Atelier de Clustering :} Espace d'exploration permettant de paramétrer les algorithmes spatiaux. L'interface s'adapte dynamiquement à l'algorithme choisi (ex: sélection du \textit{damping} pour l'AP) et affiche le pavage spatial généré.
     
-    \item \textbf{Comparateur Synchronisé (Brut vs Compressé) :} Module d'inspection visuelle affichant deux cartes côte à côte (Figure \ref{fig:gui_comparison}). Le système pré-calcule l'intégralité des \textit{frames} en mémoire pour garantir une lecture temporelle parfaitement fluide et synchronisée.
-\end{itemize}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth, height=0.35\textheight, keepaspectratio]{img/CSV_vs_compressé.jpg} 
-    \caption{Cas d'utilisation : Module de comparaison synchronisée Brut vs Compressé.}
-    \label{fig:gui_comparison}
-\end{figure}
-
-\begin{itemize}
+    \item \textbf{Comparateur Synchronisé (Brut vs Compressé) :} Module d'inspection visuelle affichant deux cartes côte à côte. Le système pré-calcule l'intégralité des \textit{frames} en mémoire pour garantir une lecture temporelle parfaitement fluide et synchronisée.
+    
     \item \textbf{Fouille Séquentielle (PrefixSpan) :} Interface dédiée à l'extraction sémantique restituant les résultats sous forme de tableau textuel filtrable, d'histogramme des fréquences, et de graphe de transitions interactif.
     
-    \item \textbf{Orchestrateur End-to-End (Pipeline) :} Module automatisant la chaîne de valeur (Figure \ref{fig:gui_pipeline}). L'exécution parallèle s'appuie sur le \textit{multiprocessing} natif ($\text{CPU\_count} - 2$ cœurs). Des indicateurs visuels suivent l'avancement des étapes jusqu'à la génération des résultats analytiques finaux.
+    \item \textbf{Orchestrateur End-to-End (Pipeline) :} Module automatisant la chaîne de valeur. L'exécution parallèle s'appuie sur le \textit{multiprocessing} natif ($\text{CPU\_count} - 2$ cœurs). Des indicateurs visuels suivent l'avancement des étapes jusqu'à la génération des résultats analytiques finaux.
 \end{itemize}
-
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=0.9\textwidth, height=0.35\textheight, keepaspectratio]{img/pipeline_exemple1.jpg} 
-    \caption{Cas d'utilisation : Exécution de l'orchestrateur de Pipeline avec restitution de l'analyse PrefixSpan.}
-    \label{fig:gui_pipeline}
-\end{figure}
 
 \subsection{Qualité Logicielle}
 Le projet est accompagné d'une suite de \textbf{72 tests unitaires} couvrant l'ensemble des modules critiques (compression, géométrie, clustering, fouille de motifs). Ces tests sont exécutables via \texttt{pytest} et permettent de vérifier systématiquement le bon fonctionnement du pipeline après chaque modification du code.
 
-% ==========================================
-% SECTION 4 : ÉLÉMENTS TECHNIQUES ET STRUCTURES DE DONNÉES
-% ==========================================
-\section{Éléments Techniques et Structures de Données}
-
-\subsection{Architecture des Modules}
-
-Notre dépôt est structuré autour de trois grands packages, illustrés par l'architecture globale du système détaillée dans la Figure \ref{fig:architecture} :
+\subsection{Organisation du Projet : Répartition des Tâches}
+Le développement de ce projet a nécessité une répartition des rôles au sein de notre groupe de trois étudiants :
 \begin{itemize}
-    \item \texttt{dota\_analytics/} : La bibliothèque cœur contenant la logique mathématique (\texttt{geometry.py}, \texttt{compression.py}, \texttt{clustering.py}, \texttt{mining.py}).
-    \item \texttt{mvc/} : Les éléments de l'interface graphique répartis en \texttt{models}, \texttt{controllers}, et \texttt{views}.
-    \item \texttt{benchmark/} : Un dossier regroupant les scripts d'expérimentation isolés (\texttt{exp0\_werror.py}, \texttt{exp2\_prefixspan.py}, etc.) utilisés pour la rédaction de ce rapport.
+    \item \textbf{Elias OKAT} : Parsing des fichiers CSV bruts avec Pandas, implémentation de l'algorithme de compression MDL, K-Médoïdes pour le clustering et implémentation des benchmarks pour MDL et clustering.
+    \item \textbf{Uzay TURKMENEL} : Calculs géométriques vectorisés (distances TRACLUS) et développement des algorithmes de clustering spatiaux.
+    \item \textbf{Paul AUBERT} : Recodage RLE, développement \textit{from scratch} de l'algorithme PrefixSpan et modélisation sous forme de Graphe de Markov.
 \end{itemize}
 
-\begin{figure}[H]
-    \centering
-    \includegraphics[width=1.0\textwidth, height=0.35\textheight, keepaspectratio]{img/diag_archi.png} 
-    \caption{Architecture logicielle et flux de données du Dota 2 Trajectory Analyzer.}
-    \label{fig:architecture}
-\end{figure}
+% ==========================================
+% SECTION 4 : ÉLÉMENTS TECHNIQUES
+% ==========================================
+\section{Éléments Techniques}
 
-\subsection{Dépendances et Implémentations \textit{From Scratch}}
-Pour manipuler la volumétrie des données, nous nous sommes appuyés sur \textbf{Pandas} pour le chargement des CSV initiaux (un \textit{tick} et les coordonnées $(X,Y)$ des 10 joueurs par ligne), \textbf{NumPy} pour les calculs vectorisés, \textbf{Matplotlib} pour la génération des \textit{overlays} géographiques, et \textbf{NetworkX} pour le rendu du graphe de Markov. 
+\subsection{Description des Données}
 
-\textbf{Point technique majeur :} Afin de maîtriser totalement la complexité algorithmique, l'algorithme de \textit{Clustering Affinity Propagation} \cite{frey2007} (message-passing) et l'algorithme de fouille de motifs \textit{PrefixSpan} (pattern-growth) \textbf{ne proviennent d'aucune bibliothèque externe}. Ils ont été intégralement implémentés et optimisés par nos soins (\textit{from scratch}) en Python pur.
+Nos expérimentations portent sur un corpus de 70 matchs réels de \textit{DotA 2} (fichiers CSV), représentant 10 joueurs par match. Chaque fichier contient un \textit{tick} par ligne avec les coordonnées $(X,Y)$ des 10 joueurs. Après compression avec $w_{error}=12$, ce corpus génère environ 18\,000 segments. Pour l'étape de fouille de motifs (Section 6.4), un sous-ensemble de 30 matchs est utilisé, produisant 1\,174 séquences fréquentes avec un support minimum de $15\%$.
 
-\subsection{Structures de Données et Optimisation Mémoire}
-L'ingestion de millions de points a nécessité une conception rigoureuse des structures de données pour éviter la saturation de la RAM. Pour illustrer la transformation opérée par notre pipeline, la Figure \ref{fig:data_transition} présente la transition entre la donnée brute et la donnée structurée :
+Pour illustrer la transformation opérée par notre pipeline, la Figure \ref{fig:data_transition} présente la transition entre la donnée brute et la donnée structurée :
 
 \begin{figure}[H]
     \centering
@@ -212,13 +189,7 @@ L'ingestion de millions de points a nécessité une conception rigoureuse des st
     \label{fig:data_transition}
 \end{figure}
 
-\begin{itemize}
-    \item \textbf{Modélisation objet bas-niveau :} Les points bruts et les segments sont encapsulés dans des \texttt{@dataclass} Python (\texttt{TrajectoryPoint}, \texttt{Segment}) proposant des méthodes vectorielles \texttt{numpy.ndarray} pour les calculs angulaires instantanés.
-    \item \textbf{Matrice TRACLUS :} Les distances inter-segments ($d_{\perp}$, $d_{\parallel}$, $d_{\theta}$) sont stockées dans une matrice carrée symétrique \texttt{numpy.ndarray} de dimension $N \times N$ typée en \texttt{float32}. Sa diagonale est initialisée à la médiane des similarités avant injection dans l'Affinity Propagation.
-    \item \textbf{Séquences RLE et SPMF :} Après compression, les séquences de chaque joueur sont converties au format standard d'exploration SPMF (ex: \texttt{5 -1 3 -1 5 -1 -2}), où \texttt{-1} sépare les itemsets et \texttt{-2} termine la séquence, stockées dans un dictionnaire associant la séquence à son support.
-\end{itemize}
-
-\subsection{Pseudo-code de l'algorithme central : MDL Compress}
+\subsection{Description des Algorithmes : Pseudo-code MDL Compress}
 
 L'algorithme glouton (Greedy) inspiré du principe du Minimum Description Length (MDL) \cite{rissanen1978}, tel qu'adapté par Lee et al. \cite{lee2007} pour la simplification de trajectoires, est la clé de voûte du débruitage. Son implémentation vectorisée en \texttt{NumPy} permet d'accélérer significativement le traitement. 
 
@@ -249,16 +220,86 @@ $debut \leftarrow 1$\;
 \caption{CompresserTrajectoireMDL}
 \end{algorithm}
 
+\subsection{Structures de Données}
+
+L'ingestion de millions de points a nécessité une conception rigoureuse des structures de données pour éviter la saturation de la RAM :
+
+\begin{itemize}
+    \item \textbf{Modélisation objet bas-niveau :} Les points bruts et les segments sont encapsulés dans des \texttt{@dataclass} Python (\texttt{TrajectoryPoint}, \texttt{Segment}) proposant des méthodes vectorielles \texttt{numpy.ndarray} pour les calculs angulaires instantanés.
+    \item \textbf{Matrice TRACLUS :} Les distances inter-segments ($d_{\perp}$, $d_{\parallel}$, $d_{\theta}$) sont stockées dans une matrice carrée symétrique \texttt{numpy.ndarray} de dimension $N \times N$ typée en \texttt{float32}. Sa diagonale est initialisée à la médiane des similarités avant injection dans l'Affinity Propagation.
+    \item \textbf{Séquences RLE et SPMF :} Après compression, les séquences de chaque joueur sont converties au format standard d'exploration SPMF (ex: \texttt{5 -1 3 -1 5 -1 -2}), où \texttt{-1} sépare les itemsets et \texttt{-2} termine la séquence, stockées dans un dictionnaire associant la séquence à son support.
+\end{itemize}
+
 % ==========================================
-% SECTION 5 : EXPERIMENTATIONS MDL
+% SECTION 5 : ARCHITECTURE DU PROJET
 % ==========================================
-\section{Expérimentations 1 : Validation de la Compression par Seuil (MDL)}
+\section{Architecture du Projet}
+
+Afin de répondre à notre problématique, nous avons conçu une application modulaire et robuste, séparant strictement la logique algorithmique de l'interface utilisateur.
+
+\subsection{Paquetages Non Standards et Dépendances}
+
+Pour manipuler la volumétrie des données, nous nous sommes appuyés sur \textbf{Pandas} pour le chargement des CSV initiaux (un \textit{tick} et les coordonnées $(X,Y)$ des 10 joueurs par ligne), \textbf{NumPy} pour les calculs vectorisés, \textbf{Matplotlib} pour la génération des \textit{overlays} géographiques, et \textbf{NetworkX} pour le rendu du graphe de Markov. 
+
+\textbf{Point technique majeur :} Afin de maîtriser totalement la complexité algorithmique, l'algorithme de \textit{Clustering Affinity Propagation} \cite{frey2007} (message-passing) et l'algorithme de fouille de motifs \textit{PrefixSpan} (pattern-growth) \textbf{ne proviennent d'aucune bibliothèque externe}. Ils ont été intégralement implémentés et optimisés par nos soins (\textit{from scratch}) en Python pur.
+
+\subsection{Diagrammes des Modules et des Classes}
+
+Notre dépôt est structuré autour de trois grands packages, illustrés par l'architecture globale du système détaillée dans la Figure \ref{fig:architecture} :
+\begin{itemize}
+    \item \texttt{dota\_analytics/} : La bibliothèque cœur contenant la logique mathématique (\texttt{geometry.py}, \texttt{compression.py}, \texttt{clustering.py}, \texttt{mining.py}).
+    \item \texttt{mvc/} : Les éléments de l'interface graphique répartis en \texttt{models}, \texttt{controllers}, et \texttt{views}.
+    \item \texttt{benchmark/} : Un dossier regroupant les scripts d'expérimentation isolés (\texttt{exp0\_werror.py}, \texttt{exp2\_prefixspan.py}, etc.) utilisés pour la rédaction de ce rapport.
+\end{itemize}
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=1.0\textwidth, height=0.35\textheight, keepaspectratio]{img/diag_archi.png} 
+    \caption{Architecture logicielle et flux de données du Dota 2 Trajectory Analyzer.}
+    \label{fig:architecture}
+\end{figure}
+
+\subsection{Chaîne de Traitement}
+
+Le projet s'organise selon un patron MVC : la bibliothèque \texttt{dota\_analytics} centralise les modèles et traitements réutilisables, tandis que le dossier \texttt{benchmark} fait office de laboratoire d'expérimentation, permettant de tester, calibrer et comparer chaque algorithme de manière isolée avant son intégration dans le pipeline final. Les données transitent séquentiellement au travers du pipeline décrit en Section 2.3 : les CSV bruts sont d'abord ingérés et compressés par \texttt{compression.py}, les segments résultants sont comparés via \texttt{metrics.py} (distance TRACLUS) et groupés par \texttt{clustering.py}, puis recodés par \texttt{recoding.py} et analysés par \texttt{mining.py}.
+
+% ==========================================
+% SECTION 6 : EXPÉRIMENTATIONS
+% ==========================================
+\section{Expérimentations}
+
+Cette section présente l'ensemble de nos expérimentations, des cas d'utilisation concrets aux résultats quantitatifs détaillés.
+
+\subsection{Cas d'Utilisation}
+
+Afin d'illustrer concrètement les fonctionnalités décrites en Section 3, voici deux cas d'utilisation représentatifs de notre application.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth, height=0.35\textheight, keepaspectratio]{img/CSV_vs_compressé.jpg} 
+    \caption{Cas d'utilisation : Module de comparaison synchronisée Brut vs Compressé.}
+    \label{fig:gui_comparison}
+\end{figure}
+
+La Figure \ref{fig:gui_comparison} montre le module de comparaison synchronisée, qui affiche deux cartes côte à côte permettant d'inspecter visuellement l'effet de la compression MDL sur une trajectoire.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.9\textwidth, height=0.35\textheight, keepaspectratio]{img/pipeline_exemple1.jpg} 
+    \caption{Cas d'utilisation : Exécution de l'orchestrateur de Pipeline avec restitution de l'analyse PrefixSpan.}
+    \label{fig:gui_pipeline}
+\end{figure}
+
+La Figure \ref{fig:gui_pipeline} illustre l'orchestrateur end-to-end, qui automatise l'enchaînement complet du pipeline et restitue les résultats de l'analyse PrefixSpan.
+
+% ------------------------------------------
+% 6.2 : VALIDATION MDL
+% ------------------------------------------
+\subsection{Validation de la Compression par Seuil (MDL)}
 
 Afin de valider rigoureusement notre implémentation de l'algorithme MDL, il était indispensable de dépasser la simple vérification visuelle pour adopter une démarche d'évaluation objective et quantitative.
 
-\textbf{Jeu de données utilisé :} Nos expérimentations portent sur un corpus de 70 matchs réels de \textit{DotA 2} (fichiers CSV), représentant 10 joueurs par match. Après compression avec $w_{error}=12$, ce corpus génère environ 18\,000 segments. Pour l'étape de fouille de motifs (Section 7), un sous-ensemble de 30 matchs est utilisé, produisant 1\,174 séquences fréquentes avec un support minimum de $15\%$.
-
-\subsection{Vérification du Fonctionnement}
+\subsubsection{Vérification du Fonctionnement}
 Pour évaluer la qualité de la compression sur un large volume de données, nous avons mesuré l'erreur spatiale (RMSE) et le taux de compression sur un ensemble représentatif de trajectoires.
 
 \begin{figure}[H]
@@ -274,7 +315,7 @@ L'analyse de la Figure \ref{fig:benchmark_quality} met en évidence deux observa
     \item \textbf{Trade-off Compression vs Précision :} On observe une concentration optimale entre 96,5\% et 98,0\% de taux de compression, pour un RMSE contenu.
 \end{itemize}
 
-\subsection{Invariance au Bruit et Stabilité Structurelle}
+\subsubsection{Invariance au Bruit et Stabilité Structurelle}
 Pour tester la robustesse face aux comportements erratiques, nous avons injecté un bruit gaussien artificiel sur les trajectoires.
 
 \begin{figure}[H]
@@ -286,7 +327,7 @@ Pour tester la robustesse face aux comportements erratiques, nous avons injecté
 
 Comme illustré par la Figure \ref{fig:heatmaps_bruit}, l'étude révèle que pour $w_{error} = 12.0$, le nombre de segments générés reste parfaitement stable pour des niveaux de bruit $\sigma \le 2.0$. L'algorithme absorbe efficacement les petites perturbations sans modifier la forme globale de la trajectoire.
 
-\subsection{Validation Visuelle de la Robustesse}
+\subsubsection{Validation Visuelle de la Robustesse}
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth, height=0.3\textheight, keepaspectratio]{img/triptych_w12_sigma3.jpg}
@@ -296,10 +337,9 @@ Comme illustré par la Figure \ref{fig:heatmaps_bruit}, l'étude révèle que po
 
 Comme le démontre la Figure \ref{fig:visu_robustesse}, face à un nuage chaotique simulant de multiples micro-clics, la compression MDL parvient à extraire des segments nets passant par le centre du nuage de points, conservant ainsi la forme globale du déplacement.
 
-\subsection{Évaluation comparative avec les méthodes standards (Baseline)}
+\subsubsection{Évaluation Comparative avec les Méthodes Standards (Baseline)}
 Nous comparons MDL à l'échantillonnage uniforme et à l'algorithme de Douglas-Peucker \cite{douglas1973} à \textbf{taux de compression égal} ($\approx 95\%$), en ajustant les paramètres de chaque méthode pour atteindre ce taux.
 
-\subsubsection{Validation qualitative et quantitative}
 \begin{figure}[H]
   \centering
   \includegraphics[width=\textwidth, height=0.28\textheight, keepaspectratio]{img/baseline_comparison.jpg}
@@ -340,7 +380,7 @@ Préservation temporelle & Non & Non & Non \\
 \end{tabular}
 \end{table}
 
-\subsection{Évaluation de la Complexité Computationnelle}
+\subsubsection{Évaluation de la Complexité Computationnelle}
 \begin{figure}[H]
   \centering
   \includegraphics[width=0.8\textwidth, height=0.3\textheight, keepaspectratio]{img/time_complexity_plot.jpg}
@@ -350,7 +390,7 @@ Préservation temporelle & Non & Non & Non \\
 
 D'après la Figure \ref{fig:time_complexity}, l'implémentation MDL affiche un coût computationnel de l'ordre de $\mathcal{O}(N^2)$ dans le pire cas, atteignant 7,19 secondes pour 5000 points. En pratique, le \textit{break} anticipé dans la boucle interne réduit ce coût moyen, ce qui explique la courbe empirique située entre $\mathcal{O}(N^{1.5})$ et $\mathcal{O}(N^2)$. Un temps de traitement \textit{offline} de 7 secondes par demi-heure de jeu reste acceptable pour un usage non temps-réel. 
 
-\subsection{Analyse de Sensibilité : Justification du paramètre $w_{error}$}
+\subsubsection{Analyse de Sensibilité : Justification du paramètre $w_{error}$}
 
 Pour justifier empiriquement le choix de notre tolérance d'erreur, nous avons fait varier $w_{error}$ de 0 à 50 et mesuré son impact sur l'ensemble de la chaîne de traitement. 
 
@@ -381,7 +421,7 @@ Pour confirmer ce choix purement spatial, la Figure \ref{fig:clustering_werror} 
 
 La Figure \ref{fig:compression_vs_silhouette} synthétise ce compromis en traçant directement le score silhouette en fonction du taux de compression pour les trois algorithmes de clustering. On constate que K-Means maintient un score stable ($\sim$0.21) sur toute la plage de compression, tandis que K-Médoïdes et Affinity Propagation sont plus sensibles aux compressions extrêmes ($>$98\%). Au point $w_{error}=12$ ($\sim$96\% de compression), les trois méthodes se situent dans leur zone de stabilité, confirmant que notre choix de paramètre ne dégrade pas la qualité du clustering en aval.
 
-\subsection{Robustesse au Bruit Gaussien}
+\subsubsection{Robustesse au Bruit Gaussien}
 
 Afin de valider la capacité de l'algorithme MDL à filtrer le bruit intrinsèque aux données de clics, nous avons mené une expérience de robustesse par injection de bruit gaussien $\mathcal{N}(0, \sigma^2)$ avec $\sigma$ croissant de 0 à 20.
 
@@ -396,12 +436,12 @@ Le protocole consiste à extraire 5 échantillons aléatoires (data augmentation
 
 La Figure \ref{fig:robustesse_bruit} révèle deux résultats importants. Premièrement, le RMSE reste stable — voire diminue légèrement — pour $\sigma \leq 5$, ce qui montre que MDL absorbe les perturbations modérées sans dégrader la fidélité au signal. Deuxièmement, le nombre de segments produits reste identique ($\sim$2 segments) jusqu'à $\sigma = 2$, démontrant une stabilité structurelle remarquable. Ce n'est qu'à partir de $\sigma \geq 10$ que le bruit commence à créer des segments supplémentaires. Ces résultats confirment que l'algorithme MDL agit comme un filtre passe-bas naturel : il élimine le bruit haute fréquence (micro-clics) tout en préservant le signal basse fréquence (déplacements stratégiques).
 
-% ==========================================
-% SECTION 6 : EXPERIMENTATIONS CLUSTERING
-% ==========================================
-\section{Expérimentations 2 : Évaluation des Algorithmes de Clustering}
+% ------------------------------------------
+% 6.3 : CLUSTERING
+% ------------------------------------------
+\subsection{Évaluation des Algorithmes de Clustering}
 
-\subsection{Optimisation de $k$ : Compromis entre Topologie et Sémantique}
+\subsubsection{Optimisation de $k$ : Compromis entre Topologie et Sémantique}
 
 La détermination du nombre de macro-zones ($k$) est une étape critique. Pour éviter un découpage arbitraire, nous avons évalué notre clustering pour $k \in [2, 30]$.
 
@@ -423,7 +463,7 @@ La Figure \ref{fig:geometric_k} illustre les métriques géométriques classique
 
 Pour vérifier que cette topologie a un sens stratégique, la Figure \ref{fig:semantic_motifs} mesure l'impact de $k$ sur le volume de stratégies extraites par PrefixSpan. On remarque qu'à $k=10$, l'algorithme génère un volume riche mais maîtrisé de motifs pertinents, évitant l'explosion combinatoire générée par une sur-segmentation. Le paramètre $k=10$ apparaît donc comme le meilleur compromis empirique entre richesse et lisibilité des résultats.
 
-\subsection{Évaluation Topologique Comparative des Algorithmes}
+\subsubsection{Évaluation Topologique Comparative des Algorithmes}
 
 Afin de sélectionner le modèle final, nous avons mis en compétition nos trois algorithmes spatiaux. 
 
@@ -436,7 +476,7 @@ Afin de sélectionner le modèle final, nous avons mis en compétition nos trois
 
 Le graphique en barres (Figure \ref{fig:clustering_quality}) montre de meilleures performances relatives de K-Médoïdes et de l'Affinity Propagation par rapport à K-Means. Par exemple, K-Médoïdes affiche un score de Silhouette de $\sim 0.14$ contre $0.08$ pour K-Means. Il faut noter que ces valeurs restent globalement basses (un score de Silhouette supérieur à $0.5$ indiquerait une structure de clusters bien séparée), ce qui s'explique par la nature dense et chevauchante des trajectoires spatiales. Néanmoins, la différence relative s'explique : K-Means ne peut moyenner que des coordonnées brutes euclidiennes, tandis que nos deux algorithmes avancés exploitent directement la matrice de distance experte (TRACLUS), respectant ainsi la perpendicularité et le sens des trajectoires.
 
-\subsection{Analyse de Sensibilité et Robustesse de la Propagation d'Affinité (AP)}
+\subsubsection{Analyse de Sensibilité et Robustesse de la Propagation d'Affinité (AP)}
 La topologie finale de la Propagation d'Affinité dépend fortement du paramètre de \textit{preference} et de la volumétrie des données ($N$).
 
 \begin{figure}[H]
@@ -454,7 +494,7 @@ L'analyse de la Figure \ref{fig:ap_sensitivity} révèle une dégradation struct
 
 Ce test montre que le sous-échantillonnage à $N=3000$ segments constitue un bon compromis permettant à l'AP de produire un découpage cohérent de la carte de \textit{DotA 2} sans être perturbé par le bruit.
 
-\subsection{Scalabilité vs Qualité Sémantique : Le choix final}
+\subsubsection{Scalabilité vs Qualité Sémantique : Le Choix Final}
 
 K-Médoïdes s'exécute extrêmement rapidement ($\sim 0.03s$). À l'inverse, l'Affinity Propagation (AP) voit son temps de convergence propre exploser ($\sim 6s$ sur 3000 segments) en raison de sa complexité quadratique $\mathcal{O}(N^2)$. 
 
@@ -466,15 +506,15 @@ Cependant, une inspection géographique révèle une faille structurelle majeure
 
 \textbf{Bilan :} Si K-Médoïdes est le seul algorithme viable pour le \textit{Big Data}, l'Affinity Propagation produit le découpage spatial le plus cohérent géographiquement. Notre étape PrefixSpan opérant sur un échantillon de 30 matchs, \textbf{nous utiliserons les clusters générés par l'Affinity Propagation} pour garantir l'extraction de stratégies sémantiquement valides.
 
-% ==========================================
-% SECTION 7 : EXPERIMENTATIONS PREFIXSPAN
-% ==========================================
-\section{Fouille de Motifs Séquentiels et Interprétation Stratégique}
+% ------------------------------------------
+% 6.4 : PREFIXSPAN
+% ------------------------------------------
+\subsection{Fouille de Motifs Séquentiels et Interprétation Stratégique}
 
-\subsection{Gestion de la volumétrie et malédiction des séquences longues}
+\subsubsection{Gestion de la Volumétrie et Malédiction des Séquences Longues}
 Sur des matchs complets, les séquences atteignent environ 65 transitions par joueur. PrefixSpan génère alors un très grand nombre de motifs (près de 100 000, dont la majorité triviaux avec un support $> 95\%$). Pour extraire des motifs plus discriminants, nous avons appliqué un seuil de support minimum de $15\%$ et réalisé la fouille sur un échantillon de 30 matchs. Une compression des états contigus (Run-Length Encoding) a été appliquée pour supprimer le bruit de stationnement.
 
-\subsection{Analyse des Motifs Séquentiels (PrefixSpan) et Graphe de Markov}
+\subsubsection{Analyse des Motifs Séquentiels (PrefixSpan) et Graphe de Markov}
 
 Avant d'extraire les motifs séquentiels complets, nous avons généré un Graphe de Markov (Figure \ref{fig:markov_graph}). Ce réseau offre une excellente cartographie visuelle des probabilités de transition immédiates (paires) entre nos différentes zones. Cependant, la chaîne de Markov est "sans mémoire" et ne voit pas les séquences longues. La véritable puissance de PrefixSpan réside précisément dans sa capacité à identifier des sous-séquences profondes (longueur $\ge 3$) extraites des trajectoires.
 
@@ -541,10 +581,10 @@ $6 \rightarrow 7 \rightarrow 2$ & Rotation transversale offensive & $\sim$17\% \
 
 \textbf{Conclusion de l'analyse~:} En évitant la sur-interprétation des algorithmes spatiaux, nous avons montré la capacité de cette chaîne de traitement à extraire des régularités de mouvement cohérentes avec les dynamiques connues de \textit{DotA~2}.
 
-% ==========================================
-% SECTION 8 : RÉCAPITULATIF DES HYPERPARAMÈTRES
-% ==========================================
-\section{Récapitulatif des Hyperparamètres du Pipeline}
+% ------------------------------------------
+% 6.5 : RÉCAPITULATIF HYPERPARAMÈTRES
+% ------------------------------------------
+\subsection{Récapitulatif des Hyperparamètres du Pipeline}
 
 Le Tableau \ref{tab:hyperparams} synthétise l'ensemble des paramètres retenus pour le pipeline final, ainsi que la section expérimentale qui justifie chaque choix.
 
@@ -557,27 +597,31 @@ Le Tableau \ref{tab:hyperparams} synthétise l'ensemble des paramètres retenus 
 \toprule
 \textbf{Paramètre} & \textbf{Valeur} & \textbf{Rôle} & \textbf{Justification} \\
 \midrule
-$w_{error}$ & 12.0 & Tolérance MDL (distance perp.) & Sec.~5.6 : plateau compression 96\% \\
-$k$ & 10 & Nombre de macro-zones & Sec.~6.1 : coude Silhouette + richesse PrefixSpan \\
-$N_{AP}$ & 3\,000 & Sous-échantillon pour AP & Sec.~6.3 : seuil de stabilité topologique \\
-Algo. clustering & Affinity Prop. & Découpage spatial & Sec.~6.4 : absence de doublons géographiques \\
-$min\_support$ & 15\% & Seuil PrefixSpan & Sec.~7.1 : filtrage des motifs triviaux \\
-$max\_length$ & 5 & Profondeur max. des motifs & Sec.~7.1 : limitation de l'explosion combinatoire \\
-$damping$ (AP) & 0.7 & Amortissement message-passing & Sec.~6.3 : stabilité de convergence \\
-$preference$ (AP) & $-5\,000$ & Auto-sélection des exemplaires & Sec.~6.3 : convergence vers $\sim$10 clusters \\
+$w_{error}$ & 12.0 & Tolérance MDL (distance perp.) & Sec.~6.2.6 : plateau compression 96\% \\
+$k$ & 10 & Nombre de macro-zones & Sec.~6.3.1 : coude Silhouette + richesse PrefixSpan \\
+$N_{AP}$ & 3\,000 & Sous-échantillon pour AP & Sec.~6.3.3 : seuil de stabilité topologique \\
+Algo. clustering & Affinity Prop. & Découpage spatial & Sec.~6.3.4 : absence de doublons géographiques \\
+$min\_support$ & 15\% & Seuil PrefixSpan & Sec.~6.4.1 : filtrage des motifs triviaux \\
+$max\_length$ & 5 & Profondeur max. des motifs & Sec.~6.4.1 : limitation de l'explosion combinatoire \\
+$damping$ (AP) & 0.7 & Amortissement message-passing & Sec.~6.3.3 : stabilité de convergence \\
+$preference$ (AP) & $-5\,000$ & Auto-sélection des exemplaires & Sec.~6.3.3 : convergence vers $\sim$10 clusters \\
 $min\_length$ & 5.0 & Longueur min. des segments & Filtrage des micro-mouvements \\
 Nb. de matchs & 70 (compr.) & Corpus total & ---  \\
- & 30 (fouille) & Sous-ensemble PrefixSpan & Sec.~7.1 \\
+ & 30 (fouille) & Sous-ensemble PrefixSpan & Sec.~6.4.1 \\
 \bottomrule
 \end{tabularx}
 \end{table}
 
 % ==========================================
-% SECTION 9 : CONCLUSION
+% SECTION 7 : CONCLUSION
 % ==========================================
-\section{Conclusion Générale et Perspectives}
+\section{Conclusion}
+
+\subsection{Récapitulatif de la Problématique et de la Réalisation}
 
 Ce projet visait à transformer un volume chaotique de clics issus du jeu DotA 2 en une intelligence stratégique lisible. Pour y parvenir, nous avons conçu une architecture modulaire en quatre étapes (compression, similarité, clustering, fouille de motifs) où chaque maillon produit une sortie directement exploitable par le suivant, tout en restant indépendamment paramétrable et évaluable. Côté code, le projet s'organise selon un patron MVC : la bibliothèque \texttt{dota\_analytics} centralise les modèles et traitements réutilisables, tandis que le dossier \texttt{benchmark} fait office de laboratoire d'expérimentation, permettant de tester, calibrer et comparer chaque algorithme de manière isolée avant son intégration dans le pipeline final.
+
+\subsection{Récapitulatif des Résultats}
 
 L'algorithme MDL a montré sa capacité à filtrer les tremblements humains tout en garantissant la préservation topologique des trajectoires. TRACLUS a ensuite permis de quantifier la proximité entre segments, fournissant une matrice de similarité sur laquelle repose tout le volet analytique. Si K-Médoïdes a démontré son efficacité de passage à l'échelle sur l'ensemble du jeu de données, l'intégration stratégique de l'Affinity Propagation sur notre échantillon de fouille s'est révélée décisive pour corriger les anomalies de doublons et obtenir une cartographie géographiquement cohérente en dix zones distinctes. Enfin, le recodage RLE suivi de PrefixSpan a permis d'isoler de véritables dynamiques séquentielles partielles (cycles de runes, rotations depuis la jungle, corridors de transition) confirmant que l'information stratégique survit à chaque étape de réduction.
 
@@ -594,8 +638,9 @@ Afin de garantir la reproductibilité de nos résultats, l'ensemble des expérim
     \item \textbf{Suite de tests :} 72 tests unitaires (\texttt{pytest}) valident systématiquement les composants critiques (géométrie, compression, clustering, fouille de motifs).
 \end{itemize}
 
-\vspace{0.5cm}
-\textbf{Perspectives :} L'essence même d'un MOBA réside dans la coordination d'équipe et l'asymétrie des camps. Plusieurs axes d'amélioration se dessinent :
+\subsection{Propositions d'Améliorations}
+
+L'essence même d'un MOBA réside dans la coordination d'équipe et l'asymétrie des camps. Plusieurs axes d'amélioration se dessinent :
 \begin{itemize}
     \item \textbf{Étiquetage par équipe :} Ajouter une étiquette Radiant/Dire lors du recodage spatial et générer des séquences synchrones temporelles. Cela permettrait d'extraire des stratégies multi-agents (coordination des membres d'une équipe) et de distinguer les phases offensives des replis.
     \item \textbf{Analyse par rôle de joueur :} Filtrer les trajectoires par rôle (carry, support, mid, offlane, roamer) afin de comparer les schémas de déplacement spécifiques à chaque poste.
@@ -649,17 +694,5 @@ J. Rissanen.
 Automatica, 14(5):465--471, 1978.
 
 \end{thebibliography}
-
-% ==========================================
-% ANNEXE : RÉPARTITION DES TÂCHES
-% ==========================================
-\appendix
-\section{Répartition des Tâches}
-Le développement de ce projet a nécessité une répartition des rôles au sein de notre groupe de trois étudiants :
-\begin{itemize}
-    \item \textbf{Elias OKAT} : Parsing des fichiers CSV bruts avec Pandas, implémentation de l'algorithme de compression MDL, K-Médoïdes pour le clustering et implémentation des benchmarks pour MDL et clustering.
-    \item \textbf{Uzay TURKMENEL} : Calculs géométriques vectorisés (distances TRACLUS) et développement des algorithmes de clustering spatiaux.
-    \item \textbf{Paul AUBERT} : Recodage RLE, développement \textit{from scratch} de l'algorithme PrefixSpan et modélisation sous forme de Graphe de Markov.
-\end{itemize}
 
 \end{document}
