@@ -1,5 +1,7 @@
-# Authors: The scikit-learn developers
-# SPDX-License-Identifier: BSD-3-Clause
+# Author: Alexander Fabisch  -- <afabisch@informatik.uni-bremen.de>
+# Author: Christopher Moody <chrisemoody@gmail.com>
+# Author: Nick Travers <nickt@squareup.com>
+# License: BSD 3 clause (C) 2014
 
 # This is the exact and Barnes-Hut t-SNE implementation. There are other
 # modifications of the algorithm:
@@ -26,11 +28,11 @@ from ..neighbors import NearestNeighbors
 from ..utils import check_random_state
 from ..utils._openmp_helpers import _openmp_effective_n_threads
 from ..utils._param_validation import Interval, StrOptions, validate_params
-from ..utils.validation import _num_samples, check_non_negative, validate_data
+from ..utils.validation import _num_samples, check_non_negative
 
 # mypy error: Module 'sklearn.manifold' has no attribute '_utils'
 # mypy error: Module 'sklearn.manifold' has no attribute '_barnes_hut_tsne'
-from . import _barnes_hut_tsne, _utils  # type: ignore[attr-defined]
+from . import _barnes_hut_tsne, _utils  # type: ignore
 
 MACHINE_EPSILON = np.finfo(np.double).eps
 
@@ -302,7 +304,7 @@ def _gradient_descent(
     objective,
     p0,
     it,
-    max_iter,
+    n_iter,
     n_iter_check=1,
     n_iter_without_progress=300,
     momentum=0.8,
@@ -330,7 +332,7 @@ def _gradient_descent(
         Current number of iterations (this function will be called more than
         once during the optimization).
 
-    max_iter : int
+    n_iter : int
         Maximum number of gradient descent iterations.
 
     n_iter_check : int, default=1
@@ -392,10 +394,10 @@ def _gradient_descent(
     best_iter = i = it
 
     tic = time()
-    for i in range(it, max_iter):
+    for i in range(it, n_iter):
         check_convergence = (i + 1) % n_iter_check == 0
         # only compute the error when needed
-        kwargs["compute_error"] = check_convergence or i == max_iter - 1
+        kwargs["compute_error"] = check_convergence or i == n_iter - 1
 
         error, grad = objective(p, *args, **kwargs)
 
@@ -615,12 +617,9 @@ class TSNE(ClassNamePrefixFeaturesOutMixin, TransformerMixin, BaseEstimator):
         .. versionchanged:: 1.2
            The default value changed to `"auto"`.
 
-    max_iter : int, default=1000
+    n_iter : int, default=1000
         Maximum number of iterations for the optimization. Should be at
         least 250.
-
-        .. versionchanged:: 1.5
-            Parameter name changed from `n_iter` to `max_iter`.
 
     n_iter_without_progress : int, default=300
         Maximum number of iterations without progress before we abort the
@@ -785,7 +784,7 @@ class TSNE(ClassNamePrefixFeaturesOutMixin, TransformerMixin, BaseEstimator):
             StrOptions({"auto"}),
             Interval(Real, 0, None, closed="neither"),
         ],
-        "max_iter": [Interval(Integral, 250, None, closed="left")],
+        "n_iter": [Interval(Integral, 250, None, closed="left")],
         "n_iter_without_progress": [Interval(Integral, -1, None, closed="left")],
         "min_grad_norm": [Interval(Real, 0, None, closed="left")],
         "metric": [StrOptions(set(_VALID_METRICS) | {"precomputed"}), callable],
@@ -802,7 +801,7 @@ class TSNE(ClassNamePrefixFeaturesOutMixin, TransformerMixin, BaseEstimator):
     }
 
     # Control the number of exploration iterations with early_exaggeration on
-    _EXPLORATION_MAX_ITER = 250
+    _EXPLORATION_N_ITER = 250
 
     # Control the number of iterations between progress checks
     _N_ITER_CHECK = 50
@@ -814,7 +813,7 @@ class TSNE(ClassNamePrefixFeaturesOutMixin, TransformerMixin, BaseEstimator):
         perplexity=30.0,
         early_exaggeration=12.0,
         learning_rate="auto",
-        max_iter=1000,
+        n_iter=1000,
         n_iter_without_progress=300,
         min_grad_norm=1e-7,
         metric="euclidean",
@@ -830,7 +829,7 @@ class TSNE(ClassNamePrefixFeaturesOutMixin, TransformerMixin, BaseEstimator):
         self.perplexity = perplexity
         self.early_exaggeration = early_exaggeration
         self.learning_rate = learning_rate
-        self.max_iter = max_iter
+        self.n_iter = n_iter
         self.n_iter_without_progress = n_iter_without_progress
         self.min_grad_norm = min_grad_norm
         self.metric = metric
@@ -844,10 +843,7 @@ class TSNE(ClassNamePrefixFeaturesOutMixin, TransformerMixin, BaseEstimator):
 
     def _check_params_vs_input(self, X):
         if self.perplexity >= X.shape[0]:
-            raise ValueError(
-                f"perplexity ({self.perplexity}) must be less "
-                f"than n_samples ({X.shape[0]})"
-            )
+            raise ValueError("perplexity must be less than n_samples")
 
     def _fit(self, X, skip_num_points=0):
         """Private function to fit the model using X as training data."""
@@ -867,19 +863,15 @@ class TSNE(ClassNamePrefixFeaturesOutMixin, TransformerMixin, BaseEstimator):
             self.learning_rate_ = self.learning_rate
 
         if self.method == "barnes_hut":
-            X = validate_data(
-                self,
+            X = self._validate_data(
                 X,
                 accept_sparse=["csr"],
                 ensure_min_samples=2,
                 dtype=[np.float32, np.float64],
             )
         else:
-            X = validate_data(
-                self,
-                X,
-                accept_sparse=["csr", "csc", "coo"],
-                dtype=[np.float32, np.float64],
+            X = self._validate_data(
+                X, accept_sparse=["csr", "csc", "coo"], dtype=[np.float32, np.float64]
             )
         if self.metric == "precomputed":
             if isinstance(self.init, str) and self.init == "pca":
@@ -949,9 +941,9 @@ class TSNE(ClassNamePrefixFeaturesOutMixin, TransformerMixin, BaseEstimator):
             P = _joint_probabilities(distances, self.perplexity, self.verbose)
             assert np.all(np.isfinite(P)), "All probabilities should be finite"
             assert np.all(P >= 0), "All probabilities should be non-negative"
-            assert np.all(P <= 1), (
-                "All probabilities should be less or then equal to one"
-            )
+            assert np.all(
+                P <= 1
+            ), "All probabilities should be less or then equal to one"
 
         else:
             # Compute the number of nearest neighbors to find.
@@ -1065,8 +1057,8 @@ class TSNE(ClassNamePrefixFeaturesOutMixin, TransformerMixin, BaseEstimator):
             "verbose": self.verbose,
             "kwargs": dict(skip_num_points=skip_num_points),
             "args": [P, degrees_of_freedom, n_samples, self.n_components],
-            "n_iter_without_progress": self._EXPLORATION_MAX_ITER,
-            "max_iter": self._EXPLORATION_MAX_ITER,
+            "n_iter_without_progress": self._EXPLORATION_N_ITER,
+            "n_iter": self._EXPLORATION_N_ITER,
             "momentum": 0.5,
         }
         if self.method == "barnes_hut":
@@ -1093,9 +1085,9 @@ class TSNE(ClassNamePrefixFeaturesOutMixin, TransformerMixin, BaseEstimator):
         # Learning schedule (part 2): disable early exaggeration and finish
         # optimization with a higher momentum at 0.8
         P /= self.early_exaggeration
-        remaining = self.max_iter - self._EXPLORATION_MAX_ITER
-        if it < self._EXPLORATION_MAX_ITER or remaining > 0:
-            opt_args["max_iter"] = self.max_iter
+        remaining = self.n_iter - self._EXPLORATION_N_ITER
+        if it < self._EXPLORATION_N_ITER or remaining > 0:
+            opt_args["n_iter"] = self.n_iter
             opt_args["it"] = it + 1
             opt_args["momentum"] = 0.8
             opt_args["n_iter_without_progress"] = self.n_iter_without_progress
@@ -1178,7 +1170,5 @@ class TSNE(ClassNamePrefixFeaturesOutMixin, TransformerMixin, BaseEstimator):
         """Number of transformed output features."""
         return self.embedding_.shape[1]
 
-    def __sklearn_tags__(self):
-        tags = super().__sklearn_tags__()
-        tags.input_tags.pairwise = self.metric == "precomputed"
-        return tags
+    def _more_tags(self):
+        return {"pairwise": self.metric == "precomputed"}
