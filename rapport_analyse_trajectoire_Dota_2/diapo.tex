@@ -1,0 +1,469 @@
+\documentclass[aspectratio=169, 11pt]{beamer}
+
+% --- PACKAGES ---
+\usepackage[utf8]{inputenc}
+\usepackage[T1]{fontenc}
+\usepackage[french]{babel}
+\usepackage{graphicx}
+\usepackage{booktabs}
+\usepackage{amsmath}
+\usepackage{tikz}
+\usetikzlibrary{arrows.meta, positioning}
+
+% --- THÈME ---
+\usetheme{Madrid}
+\usecolortheme{whale}
+
+\definecolor{dota_dark}{RGB}{18, 18, 36}
+\definecolor{dota_accent}{RGB}{233, 69, 96}
+\definecolor{dota_blue}{RGB}{52, 152, 219}
+\definecolor{dota_green}{RGB}{46, 204, 113}
+\definecolor{dota_gold}{RGB}{241, 196, 15}
+
+\setbeamercolor{palette primary}{bg=dota_dark, fg=white}
+\setbeamercolor{palette secondary}{bg=dota_dark!80, fg=white}
+\setbeamercolor{palette tertiary}{bg=dota_accent, fg=white}
+\setbeamercolor{structure}{fg=dota_accent}
+\setbeamercolor{title}{fg=white, bg=dota_dark}
+\setbeamercolor{frametitle}{fg=white, bg=dota_dark}
+\setbeamercolor{block title}{bg=dota_accent, fg=white}
+\setbeamercolor{block body}{bg=dota_dark!10}
+\setbeamercolor{item}{fg=dota_accent}
+
+\setbeamerfont{title}{size=\LARGE, series=\bfseries}
+\setbeamerfont{frametitle}{size=\large, series=\bfseries}
+
+\setbeamertemplate{footline}{
+  \leavevmode\hbox{%
+    \begin{beamercolorbox}[wd=.33\paperwidth,ht=2.5ex,dp=1ex,left]{palette primary}
+      \hspace*{2ex}\insertshortauthor
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.34\paperwidth,ht=2.5ex,dp=1ex,center]{palette secondary}
+      \insertshorttitle
+    \end{beamercolorbox}%
+    \begin{beamercolorbox}[wd=.33\paperwidth,ht=2.5ex,dp=1ex,right]{palette primary}
+      \insertframenumber{} / \inserttotalframenumber\hspace*{2ex}
+    \end{beamercolorbox}%
+  }
+}
+\setbeamertemplate{navigation symbols}{}
+
+% --- MÉTADONNÉES ---
+\title{Dota 2 Trajectory Analyzer}
+\subtitle{Compression MDL de trajectoires spatio-temporelles}
+\author{Elias \textsc{Okat} \and Uzay \textsc{Turkmenel} \and Paul \textsc{Aubert}}
+\institute{Université de Caen Normandie — L3 Informatique}
+\date{Projet 2 — 2024-2025}
+
+\begin{document}
+
+% ============================================================================
+\begin{frame}[plain]
+\titlepage
+\end{frame}
+
+% ============================================================================
+% PARTIE 1 — INTRODUCTION (2-3 slides)
+% ============================================================================
+\section{Introduction}
+
+% --- SLIDE 1 : Contexte ---
+\begin{frame}{Contexte : DotA 2 et les données}
+
+\begin{columns}[T]
+\begin{column}{0.45\textwidth}
+    \textbf{DotA 2} — MOBA compétitif, 2$\times$5 joueurs
+
+    \vspace{0.2cm}
+    Chaque match $\approx$ 30 min $\Rightarrow$ \textbf{flux massif} de $(X,Y)$
+
+    \vspace{0.2cm}
+    \textbf{Trois obstacles majeurs :}
+    \begin{enumerate}
+        \item \textcolor{dota_accent}{\textbf{Volume}} — $\sim$10M pts / corpus
+        \item \textcolor{dota_accent}{\textbf{Bruit}} — micro-clics erratiques
+        \item \textcolor{dota_accent}{\textbf{Pas de sémantique}} — un point ne dit rien
+    \end{enumerate}
+
+    \vspace{0.2cm}
+    \begin{block}{Question}
+    Clics $\to$ \textbf{comportements stratégiques} non supervisés ?
+    \end{block}
+\end{column}
+\begin{column}{0.52\textwidth}
+    \centering
+    \includegraphics[height=0.55\textheight, keepaspectratio]{img/canvas.png}\\[0.1cm]
+    {\scriptsize Carte officielle de DotA 2}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% --- SLIDE 2 : Limites de l'état de l'art ---
+\begin{frame}{Pourquoi les approches existantes ne suffisent pas}
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+    \textbf{1. Heatmaps statiques}
+    \begin{itemize}
+        \item Montrent \textit{où} les joueurs vont\ldots
+        \item \textcolor{dota_accent}{Écrasent le temps} : pas de séquence
+        \item Jungle $\to$ Mid $\to$ Rivière\ ? Invisible.
+    \end{itemize}
+
+    \vspace{0.3cm}
+    \textbf{2. Grilles manuelles}
+    \begin{itemize}
+        \item Découpage arbitraire de la carte
+        \item \textcolor{dota_accent}{Biais humain} aux frontières
+        \item Ne s'adapte pas aux flux réels
+    \end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+    \textbf{3. Clustering direct sur points bruts}
+    \begin{itemize}
+        \item Matrice $N \times N$ : $N = 10$M $\Rightarrow$ \textcolor{dota_accent}{\textbf{impossible}}
+        \item Le bruit noie le signal
+    \end{itemize}
+
+    \vspace{0.4cm}
+    \begin{alertblock}{Constat}
+    Il faut d'abord \textbf{comprimer} les données pour rendre toute analyse possible.
+    \end{alertblock}
+
+    \vspace{0.2cm}
+    $\Rightarrow$ Notre approche : un pipeline en \textbf{3 phases}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% --- SLIDE 3 : Pipeline global ---
+\begin{frame}{Notre pipeline en 3 phases}
+
+\centering
+\vspace{0.3cm}
+
+\begin{columns}[c]
+\begin{column}{0.01\textwidth}\end{column}
+\begin{column}{0.27\textwidth}
+    \centering
+    {\footnotesize\textcolor{dota_blue}{10M points}}\\[0.15cm]
+    \colorbox{dota_blue}{\parbox{0.9\linewidth}{\centering\color{white}\textbf{Phase 1}\\[0.1cm]Compression\\MDL}}
+\end{column}
+\begin{column}{0.06\textwidth}
+    \centering
+    {\Large\textcolor{gray}{$\Longrightarrow$}}\\
+    {\tiny\textcolor{gray}{segments}}
+\end{column}
+\begin{column}{0.27\textwidth}
+    \centering
+    {\footnotesize\textcolor{dota_accent}{18\,000 segments}}\\[0.15cm]
+    \colorbox{dota_accent}{\parbox{0.9\linewidth}{\centering\color{white}\textbf{Phase 2}\\[0.1cm]Clustering\\TRACLUS + AP}}
+\end{column}
+\begin{column}{0.06\textwidth}
+    \centering
+    {\Large\textcolor{gray}{$\Longrightarrow$}}\\
+    {\tiny\textcolor{gray}{zones}}
+\end{column}
+\begin{column}{0.27\textwidth}
+    \centering
+    {\footnotesize\textcolor{dota_green!70!black}{10 macro-zones}}\\[0.15cm]
+    \colorbox{dota_green!70!black}{\parbox{0.9\linewidth}{\centering\color{white}\textbf{Phase 3}\\[0.1cm]Fouille de motifs\\PrefixSpan}}
+\end{column}
+\begin{column}{0.01\textwidth}\end{column}
+\end{columns}
+
+\vspace{0.6cm}
+
+\begin{columns}[T]
+\begin{column}{0.32\textwidth}
+    \centering
+    \textcolor{dota_blue}{\textbf{Réduire}}\\
+    {\small Compression MDL :\\
+    $-$96\% de volume\\
+    Bruit filtré}
+\end{column}
+\begin{column}{0.32\textwidth}
+    \centering
+    \textcolor{dota_accent}{\textbf{Structurer}}\\
+    {\small Distance TRACLUS\\
+    Affinity Propagation\\
+    $\to$ 10 zones automatiques}
+\end{column}
+\begin{column}{0.32\textwidth}
+    \centering
+    \textcolor{dota_green!70!black}{\textbf{Interpréter}}\\
+    {\small PrefixSpan :\\
+    Motifs séquentiels\\
+    $=$ stratégies de jeu}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% ============================================================================
+% PARTIE 2 — MDL
+% ============================================================================
+\section{Compression MDL}
+
+% --- SLIDE 4a : Principe MDL ---
+\begin{frame}{MDL — Principe et algorithme glouton}
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+
+\begin{block}{Idée clé (Minimum Description Length)}
+La \textbf{description la plus courte} qui reste \textbf{fidèle} à la trajectoire (erreur $< w_{error}$).
+\end{block}
+
+\vspace{0.2cm}
+
+\textbf{Algorithme glouton :}
+\begin{enumerate}\setlength{\itemsep}{0pt}
+    \item Partir du premier point
+    \item \textbf{Étendre} le segment point par point
+    \item Calculer $d_\perp$ de chaque intermédiaire
+    \item $\max(d_\perp) < w_{error}$ $\Rightarrow$ continuer \textcolor{dota_green}{\checkmark}
+    \item $\max(d_\perp) \geq w_{error}$ $\Rightarrow$ \textbf{couper} \textcolor{dota_accent}{\textbf{$\times$}}
+    \item Reprendre au dernier point validé
+\end{enumerate}
+
+\end{column}
+\begin{column}{0.48\textwidth}
+
+    \textbf{$w_{error}$} = tolérance max :
+    \begin{itemize}\setlength{\itemsep}{0pt}
+        \item Petit $\to$ haute fidélité, peu de compression
+        \item Grand $\to$ forte compression, perte de détail
+        \item \textcolor{dota_accent}{\textbf{Notre choix : $w_{error} = 12$}}
+    \end{itemize}
+
+    \vspace{0.2cm}
+    {\small Complexité : $\mathcal{O}(N^2)$ pire cas, $\sim\mathcal{O}(N^{1.5})$ en pratique}
+
+    \vspace{0.2cm}
+    \begin{alertblock}{Résultat}
+    Compression \textbf{96--98\%} du volume, bruit filtré, erreur bornée.
+    \end{alertblock}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% --- SLIDE 5 : Avant / après ---
+\begin{frame}{Résultat : avant / après compression}
+
+\begin{columns}[c]
+\begin{column}{0.48\textwidth}
+    \centering
+    \includegraphics[width=0.9\linewidth]{img/brut.jpg}
+
+    \vspace{0.1cm}
+    \textbf{Trajectoire brute}\\
+    {\scriptsize Milliers de points, bruit inclus}
+\end{column}
+\begin{column}{0.04\textwidth}
+    \centering
+    {\LARGE $\boldsymbol{\to}$}
+\end{column}
+\begin{column}{0.48\textwidth}
+    \centering
+    \includegraphics[width=0.9\linewidth]{img/compresser.jpg}
+
+    \vspace{0.1cm}
+    \textbf{Après MDL ($w_{error}=12$)}\\
+    {\scriptsize $\sim$250 segments / joueur}
+\end{column}
+\end{columns}
+
+\vspace{0.2cm}
+\centering
+{\small Compression \textcolor{dota_green}{\textbf{96--98\%}} — bruit supprimé, signal préservé, erreur max $< 12$ unités}
+
+\end{frame}
+
+% ============================================================================
+% PARTIE 3 — TRANSITION VERS LES EXPÉRIMENTATIONS
+% ============================================================================
+\section{Expérimentations}
+
+% --- SLIDE 6 : Transition ---
+\begin{frame}{Validation expérimentale — Démarche}
+
+\centering
+{\large Comment \textbf{prouver} que le pipeline produit des résultats fiables ?}
+
+\vspace{0.3cm}
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+
+    \textbf{Exp. 1 — Compression MDL}
+    \begin{itemize}\setlength{\itemsep}{1pt}
+        \item Corpus : \textbf{70 matchs} réels
+        \item Vérif. erreur max $< w_{error}$ \textcolor{dota_green}{\checkmark}
+        \item Robustesse au bruit gaussien
+        \item Comparaison : \textit{Uniforme}, \textit{Douglas-Peucker}
+        \item Sensibilité de $w_{error}$
+    \end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+
+    \textbf{Exp. 2 — Clustering}
+    \begin{itemize}\setlength{\itemsep}{1pt}
+        \item Recherche du $k$ optimal (coude)
+        \item K-Means \textit{vs} K-Médoïdes \textit{vs} AP
+        \item Sensibilité à $N$ (AP)
+    \end{itemize}
+
+    \vspace{0.2cm}
+    \textbf{Exp. 3 — Fouille PrefixSpan}
+    \begin{itemize}\setlength{\itemsep}{1pt}
+        \item Extraction de motifs séquentiels
+        \item Interprétation stratégique sur carte
+    \end{itemize}
+\end{column}
+\end{columns}
+
+\vspace{0.2cm}
+\centering
+{\footnotesize $\Rightarrow$ Chaque choix de paramètre est \textbf{justifié expérimentalement} (pas de valeur arbitraire).}
+
+\end{frame}
+
+% --- SLIDE : MDL vs Baselines ---
+\begin{frame}{Exp. 1 — MDL \textit{vs} Uniforme \textit{vs} Douglas-Peucker}
+
+\centering
+\includegraphics[width=0.55\linewidth]{img/baseline_comparison.jpg}
+
+\vspace{0.15cm}
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+    \centering
+    À \textbf{compression égale} ($\sim$95\%) :
+
+    \vspace{0.1cm}
+    {\small\begin{tabular}{lcc}
+    \toprule
+    \textbf{Méthode} & \textbf{RMSE} & \textbf{Hausdorff} \\
+    \midrule
+    Uniforme & 5.07 & 12.80 \\
+    Douglas-Peucker & 10.81 & 22.09 \\
+    \textcolor{dota_green}{\textbf{MDL}} & \textcolor{dota_green}{\textbf{5.48}} & \textcolor{dota_green}{\textbf{11.66}} \\
+    \bottomrule
+    \end{tabular}}
+\end{column}
+\begin{column}{0.48\textwidth}
+    \begin{alertblock}{Verdict}
+    MDL : \textbf{meilleure fidélité géométrique} (Hausdorff min). Douglas-Peucker piégé par les outliers.
+    \end{alertblock}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% --- SLIDE : Complexité temporelle ---
+\begin{frame}{Exp. 1b — Complexité temporelle : MDL \textit{vs} Baselines}
+
+\centering
+\includegraphics[width=0.50\linewidth]{img/time_complexity_plot.jpg}
+
+\vspace{0.15cm}
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+    {\small\begin{tabular}{lcc}
+    \toprule
+    \textbf{Méthode} & \textbf{Complexité} & \textbf{5\,000 pts} \\
+    \midrule
+    Uniforme & $\mathcal{O}(1)$ & 0.1 ms \\
+    Douglas-P. & $\mathcal{O}(N \log N)$ & 23 ms \\
+    \textbf{MDL} & $\mathcal{O}(N^{1.5})$ & 112 ms \\
+    \bottomrule
+    \end{tabular}}
+\end{column}
+\begin{column}{0.48\textwidth}
+    \begin{block}{Verdict}
+    MDL plus lent mais \textbf{acceptable} ($\sim$7s / match). Le coût se justifie par la \textbf{qualité}.
+    \end{block}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% --- SLIDE : Sensibilité w_error ---
+\begin{frame}{Exp. 2 — Sensibilité de $w_{error}$ : pourquoi 12 ?}
+
+\centering
+\includegraphics[width=0.70\linewidth]{img/fig0_4_panel_metrics_werror.jpg}
+
+\vspace{0.15cm}
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+    \textbf{Observation :}
+    \begin{itemize}
+        \item $w_{error}$ petit $\to$ fidélité mais faible compression
+        \item $w_{error}$ grand $\to$ plateau à $\sim$96\%
+        \item \textbf{Coude} à $w_{error} \approx 12$
+    \end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+    \begin{block}{Conclusion}
+    $w_{error} = 12$ = meilleur compromis compression / fidélité.\\
+    Silhouette se stabilise, bruit $\sigma \leq 2$ absorbé.
+    \end{block}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% --- SLIDE : Exp. 3 — Robustesse au bruit gaussien ---
+\begin{frame}{Exp. 3 — Robustesse de MDL au bruit gaussien}
+
+\centering
+\includegraphics[width=0.75\linewidth]{img/robustesse_bruit_w12.png}
+
+\vspace{0.1cm}
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+    {\small \textbf{Protocole :} injection de bruit $\mathcal{N}(0, \sigma^2)$ croissant sur 5 échantillons, compression MDL ($w_{error}=12$).}
+\end{column}
+\begin{column}{0.48\textwidth}
+    \begin{block}{Résultat}
+    {\small RMSE stable jusqu'à $\sigma=5$.\\
+    Structure identique ($\sim$2 seg.) jusqu'à $\sigma=2$.\\
+    MDL \textbf{filtre le bruit}, pas le signal.}
+    \end{block}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% --- SLIDE : Transition compression → clustering ---
+\begin{frame}{Compression $\to$ Clustering : quel impact ?}
+
+\centering
+\includegraphics[width=0.60\linewidth]{img/fig13_compression_vs_silhouette.png}
+
+\vspace{0.1cm}
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+    {\small Chaque point = un $w_{error}$ différent.\\
+    $w_{error}=12$ annoté à $\sim$96\% de compression.}
+\end{column}
+\begin{column}{0.48\textwidth}
+    \begin{block}{Conclusion}
+    {\small La compression MDL \textbf{ne dégrade pas} le clustering. $w_{error}=12$ est dans la zone stable.}
+    \end{block}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+\end{document}
