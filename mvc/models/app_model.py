@@ -247,12 +247,14 @@ class AppModel:
                 callback(i + 1, total, r)
         return results
 
-    def compress_parallel(self, w_error: float) -> List[CompressResult]:
+    def compress_parallel(self, w_error: float, max_matches: int = 0) -> List[CompressResult]:
         """Compression parallèle avec multiprocessing.Pool (comme run.py)."""
         from multiprocessing import Pool, cpu_count
 
         csv_dir = self._csv_dir()
         csv_files = sorted(csv_dir.glob("coord_*.csv"))
+        if max_matches > 0:
+            csv_files = csv_files[:max_matches]
         if not csv_files:
             return []
 
@@ -756,5 +758,138 @@ class AppModel:
 
         except ImportError as e:
             return False, b"", f"Module manquant: {e}"
+        except Exception as e:
+            return False, b"", str(e)
+
+    # ── Carte des stratégies sur la map Dota ──────────────────────────────
+
+    def generate_strategy_map(
+        self,
+        w_error: float,
+        patterns: List[Tuple[Tuple[int, ...], int]],
+        min_len: int = 2,
+    ) -> Tuple[bool, bytes, str]:
+        """Génère une carte Dota 2 avec les centroïdes des clusters et les
+        transitions (flèches) des stratégies les plus fréquentes superposées."""
+        try:
+            import io
+            import matplotlib
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            from matplotlib.patches import FancyArrowPatch
+            import numpy as np
+
+            # --- Charger la map ---
+            canvas_img = self._load_canvas_image()
+            if canvas_img is None:
+                return False, b"", "canvas.png introuvable"
+
+            # --- Calculer les centroïdes de chaque cluster ---
+            clusters_file = self._find_clusters_file(w_error)
+            if clusters_file is None:
+                return False, b"", "Fichier clusters introuvable"
+
+            folder = self._resolve_w_error_folder(w_error)
+            with open(clusters_file) as f:
+                match_clusters = json.load(f)
+
+            # Accumuler les positions par cluster
+            cluster_points: Dict[int, list] = {}
+            for mid, segs_dict in match_clusters.items():
+                json_path = folder / f"{mid}_compressed.json"
+                if not json_path.exists():
+                    continue
+                with open(json_path) as f:
+                    data = json.load(f)
+                # Index rapide des segments par player
+                player_map = {p["player_id"]: p["segments"] for p in data["players"]}
+                for seg_id, label in segs_dict.items():
+                    cid = int(label)
+                    parts = seg_id.split("_")
+                    pid = int(parts[0][1:])
+                    idx = int(parts[1])
+                    segs = player_map.get(pid, [])
+                    if idx < len(segs):
+                        s = segs[idx]
+                        mx = (s["start"]["x"] + s["end"]["x"]) / 2
+                        my = (s["start"]["y"] + s["end"]["y"]) / 2
+                        cluster_points.setdefault(cid, []).append((mx, my))
+
+            # Centroïdes
+            centroids: Dict[int, Tuple[float, float]] = {}
+            for cid, pts in cluster_points.items():
+                xs = [p[0] for p in pts]
+                ys = [p[1] for p in pts]
+                centroids[cid] = (sum(xs) / len(xs), sum(ys) / len(ys))
+
+            # --- Construire les transitions depuis les patterns ---
+            patterns_dict = {p[0]: p[1] for p in patterns if len(p[0]) >= min_len}
+            if not patterns_dict:
+                return False, b"", "Aucun motif de longueur suffisante"
+
+            edges: Dict[Tuple[int, int], int] = {}
+            for pattern, support in patterns_dict.items():
+                for i in range(len(pattern) - 1):
+                    key = (pattern[i], pattern[i + 1])
+                    edges[key] = edges.get(key, 0) + support
+
+            # --- Dessiner ---
+            fig, ax = plt.subplots(figsize=(12, 12))
+            ax.imshow(canvas_img, extent=[0, 256, 0, 256], origin="upper", aspect="equal")
+            ax.set_xlim(0, 256)
+            ax.set_ylim(0, 256)
+
+            # Cercles des centroïdes
+            used_clusters = set()
+            for (src, tgt) in edges:
+                used_clusters.add(src)
+                used_clusters.add(tgt)
+
+            for cid in used_clusters:
+                if cid not in centroids:
+                    continue
+                cx, cy = centroids[cid]
+                size = len(cluster_points.get(cid, []))
+                r = min(8, 2 + size * 0.02)
+                circle = plt.Circle((cx, cy), r, color="#e94560", alpha=0.8,
+                                    edgecolor="white", linewidth=1.5, zorder=5)
+                ax.add_patch(circle)
+                ax.text(cx, cy, str(cid), ha="center", va="center",
+                        fontsize=7, fontweight="bold", color="white", zorder=6)
+
+            # Flèches des transitions
+            max_w = max(edges.values()) if edges else 1
+            for (src, tgt), weight in edges.items():
+                if src not in centroids or tgt not in centroids:
+                    continue
+                x1, y1 = centroids[src]
+                x2, y2 = centroids[tgt]
+                lw = 1 + (weight / max_w) * 4
+                alpha = 0.4 + 0.5 * (weight / max_w)
+                arrow = FancyArrowPatch(
+                    (x1, y1), (x2, y2),
+                    arrowstyle="->,head_width=6,head_length=4",
+                    color="#50fa7b", linewidth=lw, alpha=alpha,
+                    connectionstyle="arc3,rad=0.08", zorder=4,
+                )
+                ax.add_patch(arrow)
+
+            ax.set_title(
+                f"Stratégies sur la carte (w_error={w_error})",
+                fontsize=16, fontweight="bold", color="white",
+                bbox=dict(facecolor="#1a1a2e", alpha=0.8, edgecolor="none"),
+            )
+            ax.axis("off")
+            fig.patch.set_facecolor("#1a1a2e")
+            plt.tight_layout()
+
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=120, facecolor="#1a1a2e", bbox_inches="tight")
+            buf.seek(0)
+            image_bytes = buf.read()
+            plt.close(fig)
+
+            return True, image_bytes, ""
+
         except Exception as e:
             return False, b"", str(e)

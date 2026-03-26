@@ -8,7 +8,7 @@ from pathlib import Path
 from tkinter import filedialog
 
 import customtkinter as ctk
-from PIL import Image, ImageTk
+from PIL import Image
 
 from mvc.views.pages.base_page import BasePage
 from mvc.views.theme import ACCENT, ACCENT2, BG_CARD, BG_DARK, TEXT_DIM, TEXT_LIGHT
@@ -31,6 +31,7 @@ class PipelinePage(BasePage):
         self._step_widgets = []
         self._graph_images = {}  # name -> (PhotoImage, bytes)
         self._running = False
+        self._patterns = []  # patterns trouvés par PrefixSpan
         self._build_ui()
 
     # ── construction de l'interface ────────────────────────────────────
@@ -62,6 +63,30 @@ class PipelinePage(BasePage):
         right = ctk.CTkFrame(body, fg_color=BG_CARD, corner_radius=12)
         right.pack(side="left", fill="both", expand=True)
 
+        # Barre stratégies en haut du panneau droit
+        self._strat_bar = ctk.CTkFrame(right, fg_color=BG_DARK, corner_radius=8)
+        self._strat_bar.pack(fill="x", padx=8, pady=(8, 0))
+
+        ctk.CTkLabel(
+            self._strat_bar, text="Stratégies trouvées",
+            font=ctk.CTkFont(size=12, weight="bold"), text_color=TEXT_LIGHT,
+        ).pack(side="left", padx=(10, 6), pady=6)
+
+        self._strat_var = ctk.StringVar(value="— lancer le pipeline —")
+        self._strat_menu = ctk.CTkComboBox(
+            self._strat_bar, variable=self._strat_var,
+            values=["— lancer le pipeline —"],
+            width=400, height=28, state="readonly",
+            command=self._on_strategy_selected,
+        )
+        self._strat_menu.pack(side="left", padx=4, pady=6, fill="x", expand=True)
+
+        self._strat_detail = ctk.CTkLabel(
+            self._strat_bar, text="", text_color=ACCENT,
+            font=ctk.CTkFont(size=11, weight="bold"),
+        )
+        self._strat_detail.pack(side="right", padx=10, pady=6)
+
         self._results_scroll = ctk.CTkScrollableFrame(
             right, fg_color="transparent", corner_radius=0
         )
@@ -85,6 +110,11 @@ class PipelinePage(BasePage):
             cfg, text="Configuration", font=ctk.CTkFont(size=15, weight="bold"),
             text_color=TEXT_LIGHT,
         ).pack(anchor="w")
+
+        # Nombre de matchs
+        ctk.CTkLabel(cfg, text="Nombre de matchs (0 = tous)", text_color=TEXT_DIM, font=ctk.CTkFont(size=12)).pack(anchor="w", pady=(8, 0))
+        self._max_matches_var = ctk.StringVar(value="0")
+        ctk.CTkEntry(cfg, textvariable=self._max_matches_var, width=260, height=30).pack(anchor="w", pady=2)
 
         # w_error
         ctk.CTkLabel(cfg, text="w_error", text_color=TEXT_DIM, font=ctk.CTkFont(size=12)).pack(anchor="w", pady=(8, 0))
@@ -202,6 +232,10 @@ class PipelinePage(BasePage):
         for w in self._results_scroll.winfo_children():
             w.destroy()
         self._graph_images.clear()
+        self._patterns.clear()
+        self._strat_menu.configure(values=["⏳ en cours…"])
+        self._strat_var.set("⏳ en cours…")
+        self._strat_detail.configure(text="")
 
         # Collecter params
         try:
@@ -235,6 +269,7 @@ class PipelinePage(BasePage):
             cluster_kwargs=cluster_kwargs,
             min_support=min_support,
             max_length=max_length,
+            max_matches=int(self._max_matches_var.get() or 0),
         )
 
     # ── callbacks du controller ──────────────────────────────────────
@@ -262,9 +297,13 @@ class PipelinePage(BasePage):
 
         # Afficher les résultats intermédiaires
         if "patterns" in kwargs and kwargs["patterns"]:
+            self._patterns = kwargs["patterns"]
+            self._populate_strategy_dropdown(kwargs["patterns"])
             self._show_patterns_table(kwargs["patterns"])
         if "graph_bytes" in kwargs and kwargs["graph_bytes"]:
             self._add_graph("Graphe des Transitions", kwargs["graph_bytes"])
+        if "map_bytes" in kwargs and kwargs["map_bytes"]:
+            self._add_graph("Stratégies sur la Carte", kwargs["map_bytes"])
         if "freq_bytes" in kwargs and kwargs["freq_bytes"]:
             self._add_graph("Fréquence des Motifs (Top 20)", kwargs["freq_bytes"])
 
@@ -278,6 +317,35 @@ class PipelinePage(BasePage):
                 wraplength=500,
             )
             err_lbl.pack(pady=10)
+
+    # ── dropdown stratégies ──────────────────────────────────────────
+
+    def _populate_strategy_dropdown(self, patterns):
+        """Remplit la liste déroulante avec les stratégies trouvées."""
+        items = []
+        for i, (pat, sup) in enumerate(patterns[:50]):
+            motif = " → ".join(str(c) for c in pat)
+            items.append(f"#{i+1}  {motif}  (sup={sup})")
+        if not items:
+            items = ["Aucune stratégie trouvée"]
+        self._strat_menu.configure(values=items)
+        self._strat_var.set(items[0])
+        self._strat_detail.configure(text=f"{len(patterns)} stratégies")
+
+    def _on_strategy_selected(self, choice: str):
+        """Affiche le détail de la stratégie sélectionnée."""
+        if not self._patterns or choice.startswith("—") or choice.startswith("Aucune"):
+            return
+        try:
+            idx = int(choice.split("#")[1].split()[0]) - 1
+        except (IndexError, ValueError):
+            return
+        if 0 <= idx < len(self._patterns):
+            pat, sup = self._patterns[idx]
+            motif = " → ".join(str(c) for c in pat)
+            self._strat_detail.configure(
+                text=f"Stratégie #{idx+1} — longueur {len(pat)}, support {sup}"
+            )
 
     # ── affichage résultats ──────────────────────────────────────────
 
@@ -340,12 +408,13 @@ class PipelinePage(BasePage):
                 (max_w, int(pil_img.height * ratio)), Image.LANCZOS
             )
 
-        tk_img = ImageTk.PhotoImage(pil_img)
-        img_lbl = ctk.CTkLabel(card, image=tk_img, text="")
+        ctk_img = ctk.CTkImage(light_image=pil_img, dark_image=pil_img,
+                                size=(pil_img.width, pil_img.height))
+        img_lbl = ctk.CTkLabel(card, image=ctk_img, text="")
         img_lbl.pack(padx=12, pady=(4, 10))
 
         # Garder une référence pour éviter le garbage collection
-        self._graph_images[title] = (tk_img, image_bytes)
+        self._graph_images[title] = (ctk_img, image_bytes)
 
     def _export_graph(self, image_bytes: bytes, title: str):
         safe_name = title.replace(" ", "_").replace("(", "").replace(")", "")

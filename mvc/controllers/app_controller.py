@@ -220,6 +220,7 @@ class AppController:
         cluster_kwargs: dict = None,
         min_support: int = 10,
         max_length: int = 8,
+        max_matches: int = 0,
     ):
         """Pipeline complet avec compression parallèle et paramètres clustering.
 
@@ -236,15 +237,21 @@ class AppController:
                 "PrefixSpan",
                 "Graphes",
             ]
+            total = len(steps)
             try:
                 # Étape 1 — compression parallèle
-                self._notify_pp(1, len(steps), steps[0])
-                results = self.model.compress_parallel(w_error)
+                print(f"\n{'='*50}")
+                print(f"[1/{total}] Compression (w_error={w_error}, matchs={max_matches or 'tous'})")
+                print(f"{'='*50}")
+                self._notify_pp(1, total, steps[0])
+                results = self.model.compress_parallel(w_error, max_matches=max_matches)
                 n_ok = sum(1 for r in results if r.success)
+                print(f"  ✓ {n_ok}/{len(results)} matchs compressés")
                 self._notify_pp_result(1, f"{n_ok}/{len(results)} matchs compressés")
 
                 # Étape 2 — clustering
-                self._notify_pp(2, len(steps), steps[1])
+                print(f"\n[2/{total}] Clustering ({algo})")
+                self._notify_pp(2, total, steps[1])
                 self.model.run_clustering(w_error, algo=algo, **cluster_kwargs)
                 clusters = self.model.list_available_clusters(w_error)
                 if not clusters:
@@ -252,20 +259,29 @@ class AppController:
                         "Clustering échoué (0 clusters). "
                         "Pour affinity/kmedoids, réduisez max_files (<5000 segments)."
                     )
+                print(f"  ✓ {len(clusters)} clusters trouvés")
                 self._notify_pp_result(2, f"{len(clusters)} clusters ({algo})")
 
                 # Étape 3 — recodage
-                self._notify_pp(3, len(steps), steps[2])
+                print(f"\n[3/{total}] Recodage des séquences")
+                self._notify_pp(3, total, steps[2])
                 recode_res = self.model.run_recoding(w_error)
                 if not recode_res.success:
                     raise RuntimeError(f"Recodage : {recode_res.error}")
+                print(f"  ✓ {recode_res.num_sequences} séquences recodées")
                 self._notify_pp_result(3, f"{recode_res.num_sequences} séquences")
 
                 # Étape 4 — PrefixSpan
-                self._notify_pp(4, len(steps), steps[3])
+                print(f"\n[4/{total}] PrefixSpan (min_support={min_support}, max_len={max_length})")
+                self._notify_pp(4, total, steps[3])
                 mining_res = self.model.run_mining(min_support, max_length)
                 if not mining_res.success:
                     raise RuntimeError(f"PrefixSpan : {mining_res.error}")
+                print(f"  ✓ {mining_res.num_patterns} motifs (stratégies) trouvés")
+                for i, (pat, sup) in enumerate(mining_res.top_patterns[:5]):
+                    print(f"    #{i+1}  {' → '.join(str(c) for c in pat)}  (support={sup})")
+                if mining_res.num_patterns > 5:
+                    print(f"    ... et {mining_res.num_patterns - 5} autres")
                 self._notify_pp_result(
                     4,
                     f"{mining_res.num_patterns} motifs",
@@ -273,7 +289,8 @@ class AppController:
                 )
 
                 # Étape 5 — génération des graphes
-                self._notify_pp(5, len(steps), steps[4])
+                print(f"\n[5/{total}] Génération des graphes et carte")
+                self._notify_pp(5, total, steps[4])
 
                 ok_g, graph_bytes, err_g = self.model.generate_transition_graph(
                     mining_res.top_patterns, min_len=2
@@ -281,18 +298,30 @@ class AppController:
                 ok_f, freq_bytes, err_f = self.model.generate_frequency_chart(
                     mining_res.top_patterns
                 )
+                ok_m, map_bytes, err_m = self.model.generate_strategy_map(
+                    w_error, mining_res.top_patterns, min_len=2
+                )
+                print(f"  ✓ Graphe transitions : {'OK' if ok_g else err_g}")
+                print(f"  ✓ Graphe fréquences  : {'OK' if ok_f else err_f}")
+                print(f"  ✓ Carte stratégies   : {'OK' if ok_m else err_m}")
 
                 self._notify_pp_result(
                     5,
                     "Graphes générés",
                     graph_bytes=graph_bytes if ok_g else b"",
                     freq_bytes=freq_bytes if ok_f else b"",
+                    map_bytes=map_bytes if ok_m else b"",
                 )
+
+                print(f"\n{'='*50}")
+                print(f"Pipeline terminé avec succès !")
+                print(f"{'='*50}\n")
 
                 if self.view:
                     self.view.after(0, self.view.on_pp_done, True, "")
 
             except Exception as e:
+                print(f"\n❌ Erreur pipeline : {e}")
                 if self.view:
                     self.view.after(0, self.view.on_pp_done, False, str(e))
 
