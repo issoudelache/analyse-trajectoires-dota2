@@ -32,13 +32,12 @@ pip install -r requirements.txt
 
 ### PC de la fac (Ubuntu sans pip)
 
-Les dépendances sont embarquées dans `vendor/`. Utiliser le lanceur `fac.sh` :
+Les dépendances sont embarquées dans `vendor/`. Préfixer les commandes avec `PYTHONPATH=vendor` :
 
 ```bash
-chmod +x fac.sh
-./fac.sh run.py compress --w_error 12
-./fac.sh gui.py
-./fac.sh benchmark/run_all.py --exp 0
+PYTHONPATH=vendor python3 run.py compress --w_error 12
+PYTHONPATH=vendor python3 gui.py
+PYTHONPATH=vendor python3 benchmark/run_all.py --exp 0
 ```
 
 > Pour regénérer `vendor/` : `python bundle.py` (sur une machine avec pip).
