@@ -257,7 +257,7 @@ class AppController:
                 if not clusters:
                     raise RuntimeError(
                         "Clustering échoué (0 clusters). "
-                        "Pour affinity/kmedoids, réduisez max_files (<5000 segments)."
+                        "Pour affinity/kmedoids, réduisez max_files (<3000 segments)."
                     )
                 print(f"  ✓ {len(clusters)} clusters trouvés")
                 self._notify_pp_result(2, f"{len(clusters)} clusters ({algo})")

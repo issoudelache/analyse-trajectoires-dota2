@@ -3,7 +3,10 @@ PipelinePage — page dédiée au pipeline complet :
 Compression (parallèle) → Clustering → Recodage → PrefixSpan → Graphes.
 """
 
+import base64
 import io
+import json
+from datetime import datetime
 from pathlib import Path
 from tkinter import filedialog
 
@@ -32,6 +35,7 @@ class PipelinePage(BasePage):
         self._graph_images = {}  # name -> (PhotoImage, bytes)
         self._running = False
         self._patterns = []  # patterns trouvés par PrefixSpan
+        self._result_images = {}  # title -> bytes (pour sauvegarde)
         self._build_ui()
 
     # ── construction de l'interface ────────────────────────────────────
@@ -46,6 +50,22 @@ class PipelinePage(BasePage):
             font=ctk.CTkFont(size=22, weight="bold"),
             text_color=ACCENT,
         ).pack(side="left", padx=20, pady=12)
+
+        # Boutons Sauvegarder / Charger
+        self._save_btn = ctk.CTkButton(
+            header, text="💾 Sauvegarder", width=130, height=32,
+            fg_color=ACCENT2, hover_color="#1a4a8a",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=self._save_results, state="disabled",
+        )
+        self._save_btn.pack(side="right", padx=(4, 20), pady=12)
+
+        ctk.CTkButton(
+            header, text="📂 Charger", width=120, height=32,
+            fg_color=ACCENT2, hover_color="#1a4a8a",
+            font=ctk.CTkFont(size=12, weight="bold"),
+            command=self._load_results,
+        ).pack(side="right", padx=4, pady=12)
 
         # ─── Contenu : Config à gauche / Résultats à droite ─────────
         body = ctk.CTkFrame(self, fg_color="transparent")
@@ -182,9 +202,9 @@ class PipelinePage(BasePage):
         if algo == "kmeans":
             return [("n_clusters", 50), ("max_files", "")]
         elif algo == "affinity":
-            return [("damping", 0.9), ("max_iter", 400), ("max_files", 5)]
+            return [("damping", 0.9), ("max_iter", 400), ("preference", ""), ("max_files", 5), ("min_length", 5.0)]
         elif algo == "kmedoids":
-            return [("n_clusters", 50), ("max_iter", 400), ("max_files", 5)]
+            return [("n_clusters", 50), ("max_iter", 400), ("max_files", 5), ("min_length", 5.0)]
         return []
 
     # ── panneau étapes ───────────────────────────────────────────────
@@ -233,6 +253,8 @@ class PipelinePage(BasePage):
             w.destroy()
         self._graph_images.clear()
         self._patterns.clear()
+        self._result_images.clear()
+        self._save_btn.configure(state="disabled")
         self._strat_menu.configure(values=["⏳ en cours…"])
         self._strat_var.set("⏳ en cours…")
         self._strat_detail.configure(text="")
@@ -301,15 +323,20 @@ class PipelinePage(BasePage):
             self._populate_strategy_dropdown(kwargs["patterns"])
             self._show_patterns_table(kwargs["patterns"])
         if "graph_bytes" in kwargs and kwargs["graph_bytes"]:
+            self._result_images["Graphe des Transitions"] = kwargs["graph_bytes"]
             self._add_graph("Graphe des Transitions", kwargs["graph_bytes"])
         if "map_bytes" in kwargs and kwargs["map_bytes"]:
+            self._result_images["Stratégies sur la Carte"] = kwargs["map_bytes"]
             self._add_graph("Stratégies sur la Carte", kwargs["map_bytes"])
         if "freq_bytes" in kwargs and kwargs["freq_bytes"]:
+            self._result_images["Fréquence des Motifs (Top 20)"] = kwargs["freq_bytes"]
             self._add_graph("Fréquence des Motifs (Top 20)", kwargs["freq_bytes"])
 
     def on_pipeline_done(self, success: bool, error_msg: str):
         self._running = False
         self._launch_btn.configure(state="normal", text="▶  Lancer le Pipeline")
+        if success:
+            self._save_btn.configure(state="normal")
         if not success:
             err_lbl = ctk.CTkLabel(
                 self._results_scroll, text=f"❌ Erreur : {error_msg}",
@@ -427,3 +454,107 @@ class PipelinePage(BasePage):
             return
         pil_img = Image.open(io.BytesIO(image_bytes)).convert("RGB")
         pil_img.save(path, quality=95)
+
+    # ── sauvegarde / chargement des résultats ────────────────────────────
+
+    def _save_results(self):
+        """Sauvegarde patterns + images dans un fichier JSON."""
+        if not self._patterns and not self._result_images:
+            return
+
+        # Collecter la config actuelle
+        config = {
+            "w_error": self._w_error_var.get(),
+            "algo": self._algo_var.get(),
+            "max_matches": self._max_matches_var.get(),
+            "min_support": self._min_support_var.get(),
+            "max_length": self._max_length_var.get(),
+        }
+        for name, var in self._param_entries.items():
+            config[name] = var.get()
+
+        data = {
+            "saved_at": datetime.now().isoformat(),
+            "config": config,
+            "patterns": [[pat, sup] for pat, sup in self._patterns],
+            "images": {
+                title: base64.b64encode(img_bytes).decode("ascii")
+                for title, img_bytes in self._result_images.items()
+            },
+        }
+
+        ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+        path = filedialog.asksaveasfilename(
+            defaultextension=".json",
+            filetypes=[("JSON", "*.json")],
+            initialfile=f"pipeline_{ts}.json",
+            initialdir=str(Path("output")),
+        )
+        if not path:
+            return
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False)
+        print(f"✓ Résultats sauvegardés : {path}")
+
+    def _load_results(self):
+        """Charge des résultats pipeline depuis un fichier JSON."""
+        path = filedialog.askopenfilename(
+            filetypes=[("JSON", "*.json")],
+            initialdir=str(Path("output")),
+        )
+        if not path:
+            return
+
+        with open(path, "r", encoding="utf-8") as f:
+            data = json.load(f)
+
+        # Restaurer la config
+        config = data.get("config", {})
+        if "w_error" in config:
+            self._w_error_var.set(config["w_error"])
+        if "algo" in config:
+            self._algo_var.set(config["algo"])
+            self._on_algo_changed(config["algo"])
+        if "max_matches" in config:
+            self._max_matches_var.set(config["max_matches"])
+        if "min_support" in config:
+            self._min_support_var.set(config["min_support"])
+        if "max_length" in config:
+            self._max_length_var.set(config["max_length"])
+        # Restaurer les params dynamiques de l'algo
+        for name, var in self._param_entries.items():
+            if name in config:
+                var.set(config[name])
+
+        # Nettoyer l'affichage
+        for w in self._results_scroll.winfo_children():
+            w.destroy()
+        self._graph_images.clear()
+        self._patterns.clear()
+        self._result_images.clear()
+
+        # Marquer toutes les étapes comme terminées
+        for icon_lbl, name_lbl, info_lbl in self._step_widgets:
+            icon_lbl.configure(text="✓", text_color="#50fa7b")
+            name_lbl.configure(text_color="#50fa7b")
+            info_lbl.configure(text="(chargé)")
+        self._global_progress.set(1.0)
+
+        # Restaurer les patterns
+        patterns = [(pat, sup) for pat, sup in data.get("patterns", [])]
+        if patterns:
+            self._patterns = patterns
+            self._populate_strategy_dropdown(patterns)
+            self._show_patterns_table(patterns)
+
+        # Restaurer les images
+        images = data.get("images", {})
+        for title, b64 in images.items():
+            img_bytes = base64.b64decode(b64)
+            self._result_images[title] = img_bytes
+            self._add_graph(title, img_bytes)
+
+        self._save_btn.configure(state="normal")
+
+        saved_at = data.get("saved_at", "?")
+        print(f"✓ Résultats chargés depuis : {path} (sauvé le {saved_at})")
