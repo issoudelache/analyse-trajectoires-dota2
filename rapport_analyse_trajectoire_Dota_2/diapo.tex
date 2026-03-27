@@ -210,47 +210,44 @@
 
 % --- SLIDE : Choix du langage ---
 \begin{frame}{Choix technologique : Python scientifique}
-
+\small
 \begin{columns}[T]
 \begin{column}{0.48\textwidth}
 
     \textbf{Pourquoi Python ?}
-    \begin{itemize}\setlength{\itemsep}{2pt}
+    \begin{itemize}\setlength{\itemsep}{1pt}
         \item Écosystème \textbf{data science} mature
         \item Prototypage rapide, code lisible
         \item Interopérabilité C/Fortran via NumPy
-        \item Standard académique (reproductibilité)
     \end{itemize}
 
-    \vspace{0.3cm}
+    \vspace{0.15cm}
     \textbf{NumPy} — calcul matriciel
-    \begin{itemize}\setlength{\itemsep}{2pt}
+    \begin{itemize}\setlength{\itemsep}{1pt}
         \item Matrices de distance $N \times N$ (TRACLUS)
-        \item Opérations vectorisées : \textcolor{dota_green}{\textbf{$\times$100}} vs boucles Python
-        \item Gestion mémoire efficace (\texttt{float32})
+        \item Vectorisation : \textcolor{dota_green}{\textbf{$\times$100}} vs boucles Python
+        \item Mémoire efficace (\texttt{float32})
     \end{itemize}
 
 \end{column}
 \begin{column}{0.48\textwidth}
 
     \textbf{Matplotlib} — visualisation
-    \begin{itemize}\setlength{\itemsep}{2pt}
+    \begin{itemize}\setlength{\itemsep}{1pt}
         \item Superposition trajectoires sur carte
         \item Graphiques multi-panneaux (benchmarks)
-        \item Export haute résolution pour le rapport
     \end{itemize}
 
-    \vspace{0.3cm}
-    \textbf{Autres dépendances clés :}
-    \begin{itemize}\setlength{\itemsep}{2pt}
-        \item \texttt{scikit-learn} — Silhouette, Davies-Bouldin, ARI
+    \vspace{0.15cm}
+    \textbf{Autres dépendances :}
+    \begin{itemize}\setlength{\itemsep}{1pt}
+        \item \texttt{scikit-learn} — Silhouette, Davies-Bouldin
         \item \texttt{scipy} — Hausdorff, distances spatiales
-        \item \texttt{prefixspan} — fouille de motifs séquentiels
     \end{itemize}
 
     \vspace{0.15cm}
     \begin{alertblock}{Bilan}
-    Zéro dépendance lourde (pas de Spark/GPU). Pipeline reproductible avec \texttt{pip install -r requirements.txt}.
+    {\small Zéro dépendance lourde (pas de Spark/GPU). AP et PrefixSpan implémentés \textit{from scratch}.}
     \end{alertblock}
 
 \end{column}
@@ -681,6 +678,160 @@ La \textbf{description la plus courte} qui reste \textbf{fidèle} à la trajecto
     \textcolor{dota_green}{\textbf{$\Rightarrow$ Découpage 100\% guidé par la donnée}}
 \end{column}
 \end{columns}
+\end{frame}
+
+% ============================================================================
+% PARTIE 5 — CONCLUSION
+% ============================================================================
+\section{Conclusion}
+
+% --- SLIDE : Bilan du pipeline ---
+\begin{frame}{Bilan : de 10M de clics aux stratégies}
+\small
+
+\centering
+\vspace{0.1cm}
+
+\begin{columns}[c]
+\begin{column}{0.01\textwidth}\end{column}
+\begin{column}{0.22\textwidth}
+    \centering
+    {\footnotesize\textcolor{gray}{Entrée}}\\[0.1cm]
+    \colorbox{dota_dark!80}{\parbox{0.9\linewidth}{\centering\color{white}\textbf{10M points}\\[0.05cm]{\scriptsize 70 matchs bruts}}}
+\end{column}
+\begin{column}{0.04\textwidth}
+    \centering{\textcolor{gray}{$\Rightarrow$}}
+\end{column}
+\begin{column}{0.22\textwidth}
+    \centering
+    {\footnotesize\textcolor{dota_blue}{Phase 1}}\\[0.1cm]
+    \colorbox{dota_blue}{\parbox{0.9\linewidth}{\centering\color{white}\textbf{MDL}\\[0.05cm]{\scriptsize $-$96\% volume}}}
+\end{column}
+\begin{column}{0.04\textwidth}
+    \centering{\textcolor{gray}{$\Rightarrow$}}
+\end{column}
+\begin{column}{0.22\textwidth}
+    \centering
+    {\footnotesize\textcolor{dota_accent}{Phase 2}}\\[0.1cm]
+    \colorbox{dota_accent}{\parbox{0.9\linewidth}{\centering\color{white}\textbf{Clustering}\\[0.05cm]{\scriptsize 10 macro-zones}}}
+\end{column}
+\begin{column}{0.04\textwidth}
+    \centering{\textcolor{gray}{$\Rightarrow$}}
+\end{column}
+\begin{column}{0.22\textwidth}
+    \centering
+    {\footnotesize\textcolor{dota_green!70!black}{Phase 3}}\\[0.1cm]
+    \colorbox{dota_green!70!black}{\parbox{0.9\linewidth}{\centering\color{white}\textbf{PrefixSpan}\\[0.05cm]{\scriptsize 1174 motifs}}}
+\end{column}
+\begin{column}{0.01\textwidth}\end{column}
+\end{columns}
+
+\vspace{0.4cm}
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+    \textbf{Résultats clés :}
+    \begin{itemize}\setlength{\itemsep}{2pt}
+        \item Compression \textbf{96--98\%} fidèle (erreur $< 12$ unités)
+        \item Clustering AP : \textbf{10 zones} sans doublons ni trous
+        \item Motifs séquentiels interprétables : cycles de runes, rotations jungle, corridors de transition
+    \end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+    \textbf{Choix méthodologiques validés :}
+    \begin{itemize}\setlength{\itemsep}{2pt}
+        \item Chaque paramètre justifié par benchmark
+        \item AP et PrefixSpan codés \textit{from scratch}
+        \item 72 tests unitaires, graine fixée (\texttt{SEED=42})
+        \item Pipeline reproductible bout-en-bout
+    \end{itemize}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% --- SLIDE : Ce qu'on en tire ---
+\begin{frame}{Ce que l'on peut en tirer}
+\small
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+    \begin{block}{Enseignements techniques}
+    \begin{itemize}\setlength{\itemsep}{2pt}
+        \item Un \textbf{bon score statistique} (Silhouette) ne garantit pas la \textbf{cohérence géographique}
+        \item La compression est un \textbf{prérequis}, pas une option : sans MDL, aucun clustering n'est viable à cette échelle
+        \item Le sous-échantillonnage maîtrisé ($N{=}3\,000$) suffit pour capturer la structure globale
+    \end{itemize}
+    \end{block}
+\end{column}
+\begin{column}{0.48\textwidth}
+    \begin{block}{Enseignements métier (DotA 2)}
+    \begin{itemize}\setlength{\itemsep}{2pt}
+        \item Les \textbf{rotations de runes} et les \textbf{corridors mid$\to$jungle} dominent les motifs fréquents
+        \item Les stratégies émergent de la donnée \textbf{sans supervision} ni connaissance experte
+        \item Le pipeline est \textbf{transposable} à d'autres jeux ou données spatio-temporelles
+    \end{itemize}
+    \end{block}
+\end{column}
+\end{columns}
+
+\vspace{0.3cm}
+\centering
+\begin{alertblock}{Conclusion générale}
+{\small De la donnée brute (18\,000 segments) aux motifs interprétables (1\,174 séquences), le pipeline a su \textbf{préserver et révéler une structure latente} que la seule observation visuelle ne permettait pas de saisir.}
+\end{alertblock}
+
+\end{frame}
+
+% --- SLIDE : Améliorations ---
+\begin{frame}{Perspectives et améliorations}
+\small
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+    \textbf{\textcolor{dota_accent}{Enrichissement des données}}
+    \begin{itemize}\setlength{\itemsep}{3pt}
+        \item \textbf{Étiquetage Radiant / Dire} : séquences synchrones par équipe pour extraire des stratégies multi-agents
+        \item \textbf{Filtrage par rôle} (carry, support, mid\ldots) : comparer les schémas de déplacement par poste
+        \item \textbf{Événements de jeu} (kills, achats, tours) : relier les déplacements aux décisions stratégiques
+    \end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+    \textbf{\textcolor{dota_blue}{Améliorations algorithmiques}}
+    \begin{itemize}\setlength{\itemsep}{3pt}
+        \item \textbf{DBSCAN / HDBSCAN} : clustering sans fixer $k$, formes non sphériques
+        \item \textbf{Fenêtre temporelle} : détecter les phases de jeu (early / mid / late game)
+        \item \textbf{Compression adaptative} : $w_{error}$ variable selon la densité locale
+    \end{itemize}
+
+    \vspace{0.2cm}
+    \begin{exampleblock}{Vision}
+    {\small Un outil d'analyse temps réel pour les équipes professionnelles et les casters.}
+    \end{exampleblock}
+\end{column}
+\end{columns}
+
+\end{frame}
+
+% --- SLIDE : Merci ---
+\begin{frame}[plain]
+\centering
+\vspace{1.5cm}
+
+{\Huge\textbf{\textcolor{dota_accent}{Merci de votre attention}}}
+
+\vspace{0.8cm}
+
+{\large Elias \textsc{Okat} \quad$\cdot$\quad Uzay \textsc{Turkmenel} \quad$\cdot$\quad Paul \textsc{Aubert}}
+
+\vspace{0.4cm}
+
+{\small Université de Caen Normandie --- L3 Informatique --- Projet 2}
+
+\vspace{1cm}
+
+{\normalsize\textcolor{dota_blue}{\textbf{Questions ?}}}
+
 \end{frame}
 
 \end{document}
