@@ -75,13 +75,13 @@
     \textbf{DotA 2} — MOBA compétitif, 2$\times$5 joueurs
 
     \vspace{0.2cm}
-    Chaque match $\approx$ 30 min $\Rightarrow$ \textbf{flux massif} de $(X,Y)$
+    Chaque match $\approx$ 30-45 min $\Rightarrow$ \textbf{flux massif} de $(X,Y)$
 
     \vspace{0.2cm}
     \textbf{Trois obstacles majeurs :}
     \begin{enumerate}
         \item \textcolor{dota_accent}{\textbf{Volume}} — $\sim$10M pts / corpus
-        \item \textcolor{dota_accent}{\textbf{Bruit}} — micro-clics erratiques
+        \item \textcolor{dota_accent}{\textbf{Bruit}} — micro-déplacements
         \item \textcolor{dota_accent}{\textbf{Pas de sémantique}} — un point ne dit rien
     \end{enumerate}
 
@@ -247,7 +247,7 @@
 
     \vspace{0.15cm}
     \begin{alertblock}{Bilan}
-    {\small Zéro dépendance lourde (pas de Spark/GPU). AP et PrefixSpan implémentés \textit{from scratch}.}
+    {\small Zéro dépendance lourde !}
     \end{alertblock}
 
 \end{column}
@@ -678,6 +678,50 @@ La \textbf{description la plus courte} qui reste \textbf{fidèle} à la trajecto
     \textcolor{dota_green}{\textbf{$\Rightarrow$ Découpage 100\% guidé par la donnée}}
 \end{column}
 \end{columns}
+\end{frame}
+
+\begin{frame}{PrefixSpan — Extraction de motifs séquentiels}
+    \begin{columns}
+        \column{0.6\textwidth}
+        \textbf{Principe :}
+        \begin{itemize}
+            \item Trouver les sous-séquences d'états fréquentes
+            \item Approche par \textit{pattern growth}
+        \end{itemize}
+        \vspace{0.5em}
+        \textbf{Paramètres :}
+        \begin{itemize}
+            \item minSupport : $0.2 =  20 \%$
+            \item maxLength : 5 
+        \end{itemize}
+        
+        \column{0.4\textwidth}
+        % Diagramme du pipeline ou pseudo-code simplifié
+        \includegraphics[width=\linewidth, height=0.7\textheight, keepaspectratio]{img/prefixspan_benchmark.jpg}
+    \end{columns}
+\end{frame}
+
+\begin{frame}{Résultats — Motifs et graphe de transitions}
+    \begin{columns}
+        \column{0.45\textwidth}
+        \small
+        \begin{tabular}{|c|c|}
+            \hline
+            \textbf{Motif} & \textbf{Sup.} \\
+            \hline
+            14 $\rightarrow$ 68 & 22 \\
+            91 $\rightarrow$ 68 & 24 \\
+            91 $\rightarrow$ 36 & 21 \\
+            68 $\rightarrow$ 83 & 19 \\
+            \hline
+        \end{tabular}
+        \vspace{0.5em}
+        
+        \textbf{Interprétation :} Zones 14, 68, 91 = hubs stratégiques
+        
+        \column{0.55\textwidth}
+        \includegraphics[width=\linewidth, height=0.7\textheight, keepaspectratio]{img/Graphe_des_Transitions.jpg}
+    \end{columns}
 \end{frame}
 
 % ============================================================================
