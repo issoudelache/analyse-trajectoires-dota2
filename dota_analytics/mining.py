@@ -17,15 +17,20 @@ class PrefixSpan:
     Version optimisée avec parallélisation et caching.
     """
 
-    def __init__(self, min_support: int = 2, max_length: int = 10):
+    def __init__(self, min_support: Union[int, float] = 0.1, max_length: int = 10):
         """
         Initialise le modèle avec un seuil de support minimum.
 
         Args:
-            min_support: Nombre minimum d'occurrences pour qu'un motif soit conservé.
-            max_length:  Longueur maximale des motifs extraits (évite la récursion infinie).
+            min_support: Seuil de support minimum.
+                - Si float (0.0 < x <= 1.0) : pourcentage de la base de données.
+                  Ex: 0.1 = 10% des séquences doivent contenir le motif.
+                - Si int (x >= 1) : nombre absolu de séquences.
+                  Ex: 5 = le motif doit apparaître dans au moins 5 séquences.
+            max_length: Longueur maximale des motifs extraits (évite la récursion infinie).
         """
-        self.min_support = min_support
+        self._min_support_param = min_support
+        self.min_support = min_support  # Sera recalculé dans mine() si pourcentage
         self.max_length = max_length
         self.results: Dict[Tuple[int, ...], int] = {}
         self._progress_callback: Optional[Callable[[int, int, float, int], None]] = None
@@ -105,6 +110,15 @@ class PrefixSpan:
 
         if not database:
             return self.results
+
+        # Calcul du support absolu si pourcentage fourni
+        n_sequences = len(database)
+        if isinstance(self._min_support_param, float) and 0.0 < self._min_support_param <= 1.0:
+            # Pourcentage : convertir en valeur absolue
+            self.min_support = max(1, int(n_sequences * self._min_support_param))
+        else:
+            # Valeur absolue
+            self.min_support = max(1, int(self._min_support_param))
 
         # Conversion en numpy si nécessaire
         if isinstance(database[0], list):
