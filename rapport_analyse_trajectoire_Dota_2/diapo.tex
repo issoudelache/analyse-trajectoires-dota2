@@ -390,47 +390,43 @@ La \textbf{description la plus courte} qui reste \textbf{fidèle} à la trajecto
 
 % --- SLIDE : MDL vs Baselines ---
 \begin{frame}{Exp. 1 — MDL \textit{vs} Uniforme \textit{vs} Douglas-Peucker}
-
-\centering
-\includegraphics[width=0.55\linewidth]{img/baseline_comparison.jpg}
-
-\vspace{0.15cm}
-
-\begin{columns}[T]
-\begin{column}{0.48\textwidth}
+\small
+\begin{columns}[c]
+\begin{column}{0.52\textwidth}
     \centering
+    \includegraphics[width=\linewidth, height=0.7\textheight, keepaspectratio]{img/baseline_comparison.jpg}
+\end{column}
+\begin{column}{0.45\textwidth}
     À \textbf{compression égale} ($\sim$95\%) :
 
     \vspace{0.1cm}
     {\small\begin{tabular}{lcc}
     \toprule
-    \textbf{Méthode} & \textbf{RMSE} & \textbf{Hausdorff} \\
+    \textbf{Méthode} & \textbf{RMSE} & \textbf{Hausd.} \\
     \midrule
     Uniforme & 5.07 & 12.80 \\
-    Douglas-Peucker & 10.81 & 22.09 \\
+    Douglas-P. & 10.81 & 22.09 \\
     \textcolor{dota_green}{\textbf{MDL}} & \textcolor{dota_green}{\textbf{5.48}} & \textcolor{dota_green}{\textbf{11.66}} \\
     \bottomrule
     \end{tabular}}
-\end{column}
-\begin{column}{0.48\textwidth}
+
+    \vspace{0.15cm}
     \begin{alertblock}{Verdict}
-    MDL : \textbf{meilleure fidélité géométrique} (Hausdorff min). Douglas-Peucker piégé par les outliers.
+    {\small MDL : \textbf{meilleure fidélité} (Hausdorff min). Douglas-Peucker piégé par les outliers.}
     \end{alertblock}
 \end{column}
 \end{columns}
-
 \end{frame}
 
 % --- SLIDE : Complexité temporelle ---
 \begin{frame}{Exp. 1b — Complexité temporelle : MDL \textit{vs} Baselines}
-
-\centering
-\includegraphics[width=0.50\linewidth]{img/time_complexity_plot.jpg}
-
-\vspace{0.15cm}
-
-\begin{columns}[T]
-\begin{column}{0.48\textwidth}
+\small
+\begin{columns}[c]
+\begin{column}{0.52\textwidth}
+    \centering
+    \includegraphics[width=\linewidth, height=0.7\textheight, keepaspectratio]{img/time_complexity_plot.jpg}
+\end{column}
+\begin{column}{0.45\textwidth}
     {\small\begin{tabular}{lcc}
     \toprule
     \textbf{Méthode} & \textbf{Complexité} & \textbf{5\,000 pts} \\
@@ -440,14 +436,13 @@ La \textbf{description la plus courte} qui reste \textbf{fidèle} à la trajecto
     \textbf{MDL} & $\mathcal{O}(N^{1.5})$ & 112 ms \\
     \bottomrule
     \end{tabular}}
-\end{column}
-\begin{column}{0.48\textwidth}
+
+    \vspace{0.2cm}
     \begin{block}{Verdict}
-    MDL plus lent mais \textbf{acceptable} ($\sim$7s / match). Le coût se justifie par la \textbf{qualité}.
+    {\small MDL plus lent mais \textbf{acceptable} ($\sim$7s / match). Le coût se justifie par la \textbf{qualité}.}
     \end{block}
 \end{column}
 \end{columns}
-
 \end{frame}
 
 % --- SLIDE : Sensibilité w_error ---
@@ -502,24 +497,190 @@ La \textbf{description la plus courte} qui reste \textbf{fidèle} à la trajecto
 
 % --- SLIDE : Transition compression → clustering ---
 \begin{frame}{Compression $\to$ Clustering : quel impact ?}
-
-\centering
-\includegraphics[width=0.60\linewidth]{img/fig13_compression_vs_silhouette.png}
-
-\vspace{0.1cm}
-
-\begin{columns}[T]
-\begin{column}{0.48\textwidth}
+\small
+\begin{columns}[c]
+\begin{column}{0.55\textwidth}
+    \centering
+    \includegraphics[width=\linewidth, height=0.7\textheight, keepaspectratio]{img/fig13_compression_vs_silhouette.png}
+\end{column}
+\begin{column}{0.42\textwidth}
     {\small Chaque point = un $w_{error}$ différent.\\
     $w_{error}=12$ annoté à $\sim$96\% de compression.}
-\end{column}
-\begin{column}{0.48\textwidth}
+
+    \vspace{0.2cm}
     \begin{block}{Conclusion}
     {\small La compression MDL \textbf{ne dégrade pas} le clustering. $w_{error}=12$ est dans la zone stable.}
     \end{block}
 \end{column}
 \end{columns}
+\end{frame}
 
+% ============================================================================
+% PARTIE 4 — CLUSTERING
+% ============================================================================
+\section{Clustering Spatial}
+
+% --- SLIDE : Optimisation de k ---
+\begin{frame}{Optimisation de $k$ : compromis topologie / sémantique}
+\small
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+    \centering
+    \includegraphics[width=\linewidth, height=0.55\textheight, keepaspectratio]{img/fig1_3_panel_metrics_k.jpg}\\
+    {\scriptsize Recherche du $k$ optimal ($k \in [2, 30]$)}
+\end{column}
+\begin{column}{0.42\textwidth}
+    \textbf{Méthode du coude :}
+    \begin{itemize}\setlength{\itemsep}{1pt}
+        \item \textbf{Davies-Bouldin} : minimum local à $k \approx 10$ \textcolor{dota_green}{\checkmark}
+        \item \textbf{Silhouette} : stabilisation en plateau
+    \end{itemize}
+
+    \vspace{0.15cm}
+    \begin{block}{Validation par PrefixSpan}
+        {\small À $k=10$, volume de motifs \textbf{riche mais maîtrisé} : pas d'explosion combinatoire.}
+    \end{block}
+
+    \vspace{0.1cm}
+    $\Rightarrow$ \textbf{Choix final : $k = 10$ zones}
+\end{column}
+\end{columns}
+\end{frame}
+
+% --- SLIDE : Comparaison des algorithmes ---
+\begin{frame}{Évaluation comparative des algorithmes de clustering}
+\small
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+    \textbf{Trois algorithmes en compétition :}
+    \begin{enumerate}\setlength{\itemsep}{1pt}
+        \item \textbf{K-Means} (baseline euclidienne)
+        \item \textbf{K-Médoïdes} (PAM)
+        \item \textbf{Affinity Propagation} (AP)
+    \end{enumerate}
+
+    \vspace{0.15cm}
+    \textbf{Avantage de la distance TRACLUS :}
+    \begin{itemize}\setlength{\itemsep}{1pt}
+        \item K-Means limité à l'\textbf{euclidien brut}
+        \item K-Médoïdes / AP exploitent la \textbf{matrice experte} (perp. + par. + angle)
+    \end{itemize}
+\end{column}
+\begin{column}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth, height=0.45\textheight, keepaspectratio]{img/fig3_comparison_algo.jpg}\\
+    {\scriptsize Scores de Silhouette par algorithme}
+
+    \vspace{0.15cm}
+    \begin{alertblock}{Observation}
+        {\small K-Médoïdes et AP \textbf{doublent} le score Silhouette de K-Means grâce à TRACLUS.}
+    \end{alertblock}
+\end{column}
+\end{columns}
+\end{frame}
+
+% --- SLIDE : Sensibilité de l'AP ---
+\begin{frame}{Sensibilité de l'AP à la taille de l'échantillon}
+\small
+\begin{columns}[c]
+\begin{column}{0.52\textwidth}
+    \centering
+    \includegraphics[width=\linewidth, height=0.7\textheight, keepaspectratio]{img/ap_N.jpg}
+\end{column}
+\begin{column}{0.45\textwidth}
+    \begin{itemize}\setlength{\itemsep}{3pt}
+        \item \textbf{Passage à l'échelle} : sur-segmentation (12--14 clusters) dès $N \geq 8\,000$
+        \item \textbf{Zone de convergence} : $k = 10$ stable pour $N = 3\,000$
+    \end{itemize}
+
+    \vspace{0.2cm}
+    \begin{block}{Décision technique}
+        {\small Sous-échantillonnage à \textbf{$N = 3\,000$ segments} pour un découpage cohérent en 10 zones.}
+    \end{block}
+\end{column}
+\end{columns}
+\end{frame}
+
+% --- SLIDE : Benchmark Qualité vs Scalabilité ---
+\begin{frame}{Benchmark : qualité vs scalabilité ($k=12$)}
+\small
+\begin{columns}[c]
+\begin{column}{0.52\textwidth}
+    \centering
+    \includegraphics[width=\linewidth, height=0.7\textheight, keepaspectratio]{img/fig3_overview_k12.jpg}
+\end{column}
+\begin{column}{0.45\textwidth}
+    \begin{block}{Qualité (Silhouette)}
+        {\small\begin{itemize}\setlength{\itemsep}{1pt}
+            \item \textbf{K-Médoïdes} domine (médiane $\approx 0.15$)
+            \item \textbf{AP} : instable si $N > 8\,000$
+        \end{itemize}}
+    \end{block}
+
+    \vspace{0.1cm}
+    \begin{block}{Scalabilité (temps)}
+        {\small\begin{itemize}\setlength{\itemsep}{1pt}
+            \item \textbf{K-Means / K-Médoïdes} : quasi linéaires
+            \item \textbf{AP} : $\mathcal{O}(N^2)$, prohibitif $> 4\,000$ seg.
+        \end{itemize}}
+    \end{block}
+
+    \vspace{0.1cm}
+    {\footnotesize Benchmark à $k=12$ fixé. En production, l'AP converge vers $k=10$.}
+\end{column}
+\end{columns}
+\end{frame}
+
+% --- SLIDE : Le paradoxe du K-Médoïdes ---
+\begin{frame}{Le paradoxe : pourquoi rejeter le K-Médoïdes ?}
+\small
+\begin{columns}[c]
+\begin{column}{0.62\textwidth}
+    \includegraphics[width=\linewidth, height=0.82\textheight, keepaspectratio]{img/fig3_1_clusters_map.jpg}\\
+    {\scriptsize L'AP identifie 10 zones distinctes, sans doublons.}
+\end{column}
+\begin{column}{0.36\textwidth}
+    \textbf{Le problème des doublons :}
+    \begin{itemize}\setlength{\itemsep}{2pt}
+        \item Deux centres à \textbf{$< 5$ unités} d'écart
+        \item \textcolor{dota_accent}{Gaspillage} : même zone couverte deux fois (Offlane Radiant)
+        \item Zones entières ignorées (Top Lane)
+    \end{itemize}
+
+    \vspace{0.15cm}
+    \begin{alertblock}{Limite du Silhouette}
+        {\small Un bon score statistique $\neq$ \textbf{cohérence géographique}. K-Médoïdes optimise la compacité, pas la couverture.}
+    \end{alertblock}
+\end{column}
+\end{columns}
+\end{frame}
+
+% --- SLIDE : Choix Final et paramétrage AP ---
+\begin{frame}{Choix final : Affinity Propagation paramétré}
+\small
+\begin{columns}[c]
+\begin{column}{0.62\textwidth}
+    \includegraphics[width=\linewidth, height=0.82\textheight, keepaspectratio]{img/fig3_1_clusters_map.jpg}\\
+    {\scriptsize Les 10 macro-zones découvertes par l'AP}
+\end{column}
+\begin{column}{0.36\textwidth}
+    \begin{exampleblock}{Pourquoi l'AP malgré son coût ?}
+        {\small Seul algorithme produisant un découpage \textbf{géographiquement cohérent}, servant d'\textbf{alphabet} pour PrefixSpan.}
+    \end{exampleblock}
+
+    \vspace{0.1cm}
+    \textbf{Paramétrage retenu :}
+    \begin{itemize}\setlength{\itemsep}{2pt}
+        \item \textbf{$N = 3\,000$} segments (convergence)
+        \item \textbf{Damping} $= 0.7$ (stabilisation)
+        \item \textbf{Préférence} $= -5\,000$ (cible $k \approx 10$)
+    \end{itemize}
+
+    \vspace{0.1cm}
+    \centering
+    \textcolor{dota_green}{\textbf{$\Rightarrow$ Découpage 100\% guidé par la donnée}}
+\end{column}
+\end{columns}
 \end{frame}
 
 \end{document}

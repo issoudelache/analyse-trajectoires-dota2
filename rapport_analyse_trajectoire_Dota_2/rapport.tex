@@ -166,6 +166,18 @@ Le développement de ce projet a nécessité une répartition des rôles au sein
 % ==========================================
 \section{Éléments Techniques}
 
+\subsection{Choix Technologique : Python Scientifique}
+
+L'ensemble du projet est développé en \textbf{Python 3}, un choix motivé par la maturité de son écosystème pour le calcul scientifique et l'analyse de données. Trois bibliothèques constituent le socle technique de notre pipeline :
+
+\begin{itemize}
+    \item \textbf{NumPy} : toutes les opérations critiques (distances TRACLUS, matrices de similarité $N \times N$, compression MDL) sont vectorisées via \texttt{numpy.ndarray}, ce qui permet des gains de performance de l'ordre de $\times 100$ par rapport à des boucles Python classiques.
+    \item \textbf{Pandas} : utilisé pour l'ingestion et le nettoyage des fichiers CSV bruts, chaque fichier contenant un \textit{tick} par ligne avec les coordonnées des 10 joueurs.
+    \item \textbf{Matplotlib} : génération de l'ensemble des visualisations du projet, des \textit{overlays} de trajectoires sur la carte de jeu aux graphiques multi-panneaux des benchmarks expérimentaux.
+\end{itemize}
+
+Les algorithmes centraux du pipeline, notamment l'\textit{Affinity Propagation} et \textit{PrefixSpan}, ont été implémentés intégralement par nos soins (\textit{from scratch}) sans recours à des bibliothèques externes, afin de maîtriser la complexité algorithmique et d'adapter finement chaque étape à notre contexte de données e-sport.
+
 \subsection{Description des Données}
 
 Nos expérimentations portent sur un corpus de 70 matchs réels de \textit{DotA 2} (fichiers CSV), représentant 10 joueurs par match. Chaque fichier contient un \textit{tick} par ligne avec les coordonnées $(X,Y)$ des 10 joueurs. Après compression avec $w_{error}=12$, ce corpus génère environ 18\,000 segments. Pour l'étape de fouille de motifs (Section 6.4), un sous-ensemble de 30 matchs est utilisé, produisant 1\,174 séquences fréquentes avec un support minimum de $15\%$.
