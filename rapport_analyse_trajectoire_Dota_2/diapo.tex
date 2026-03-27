@@ -208,6 +208,56 @@
 \includegraphics[width=\textwidth, height=0.88\textheight, keepaspectratio]{img/diagramme_architech.jpg}
 \end{frame}
 
+% --- SLIDE : Choix du langage ---
+\begin{frame}{Choix technologique : Python scientifique}
+
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+
+    \textbf{Pourquoi Python ?}
+    \begin{itemize}\setlength{\itemsep}{2pt}
+        \item Écosystème \textbf{data science} mature
+        \item Prototypage rapide, code lisible
+        \item Interopérabilité C/Fortran via NumPy
+        \item Standard académique (reproductibilité)
+    \end{itemize}
+
+    \vspace{0.3cm}
+    \textbf{NumPy} — calcul matriciel
+    \begin{itemize}\setlength{\itemsep}{2pt}
+        \item Matrices de distance $N \times N$ (TRACLUS)
+        \item Opérations vectorisées : \textcolor{dota_green}{\textbf{$\times$100}} vs boucles Python
+        \item Gestion mémoire efficace (\texttt{float32})
+    \end{itemize}
+
+\end{column}
+\begin{column}{0.48\textwidth}
+
+    \textbf{Matplotlib} — visualisation
+    \begin{itemize}\setlength{\itemsep}{2pt}
+        \item Superposition trajectoires sur carte
+        \item Graphiques multi-panneaux (benchmarks)
+        \item Export haute résolution pour le rapport
+    \end{itemize}
+
+    \vspace{0.3cm}
+    \textbf{Autres dépendances clés :}
+    \begin{itemize}\setlength{\itemsep}{2pt}
+        \item \texttt{scikit-learn} — Silhouette, Davies-Bouldin, ARI
+        \item \texttt{scipy} — Hausdorff, distances spatiales
+        \item \texttt{prefixspan} — fouille de motifs séquentiels
+    \end{itemize}
+
+    \vspace{0.15cm}
+    \begin{alertblock}{Bilan}
+    Zéro dépendance lourde (pas de Spark/GPU). Pipeline reproductible avec \texttt{pip install -r requirements.txt}.
+    \end{alertblock}
+
+\end{column}
+\end{columns}
+
+\end{frame}
+
 % ============================================================================
 % PARTIE 2 — MDL
 % ============================================================================

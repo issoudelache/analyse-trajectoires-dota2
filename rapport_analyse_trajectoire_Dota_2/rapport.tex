@@ -13,6 +13,7 @@
 \usepackage{subcaption}
 \usepackage{booktabs}
 \usepackage{tabularx}
+\usepackage{url}
 
 \setlist[itemize]{label=-}
 
@@ -434,7 +435,7 @@ Afin de valider la capacité de l'algorithme MDL à filtrer le bruit intrinsèqu
 
 Le protocole consiste à extraire 5 échantillons aléatoires (data augmentation), à injecter un bruit gaussien de variance croissante, puis à compresser les données bruitées avec $w_{error}=12$. La RMSE est ensuite mesurée par rapport au signal original (sans bruit).
 
-La Figure \ref{fig:robustesse_bruit} révèle deux résultats importants. Premièrement, le RMSE reste stable — voire diminue légèrement — pour $\sigma \leq 5$, ce qui montre que MDL absorbe les perturbations modérées sans dégrader la fidélité au signal. Deuxièmement, le nombre de segments produits reste identique ($\sim$2 segments) jusqu'à $\sigma = 2$, démontrant une stabilité structurelle remarquable. Ce n'est qu'à partir de $\sigma \geq 10$ que le bruit commence à créer des segments supplémentaires. Ces résultats confirment que l'algorithme MDL agit comme un filtre passe-bas naturel : il élimine le bruit haute fréquence (micro-clics) tout en préservant le signal basse fréquence (déplacements stratégiques).
+La Figure \ref{fig:robustesse_bruit} révèle deux résultats importants. Premièrement, le RMSE reste stable, voire diminue légèrement, pour $\sigma \leq 5$, ce qui montre que MDL absorbe les perturbations modérées sans dégrader la fidélité au signal. Deuxièmement, le nombre de segments produits reste identique ($\sim$2 segments) jusqu'à $\sigma = 2$, démontrant une stabilité structurelle remarquable. Ce n'est qu'à partir de $\sigma \geq 10$ que le bruit commence à créer des segments supplémentaires. Ces résultats confirment que l'algorithme MDL agit comme un filtre passe-bas naturel : il élimine le bruit haute fréquence (micro-clics) tout en préservant le signal basse fréquence (déplacements stratégiques).
 
 % ------------------------------------------
 % 6.3 : CLUSTERING
@@ -547,15 +548,22 @@ Le nombre de clusters est remarquablement stable ($k \in \{9, 10\}$ sur 100\% de
 
 \subsubsection{Scalabilité vs Qualité Sémantique : Le Choix Final}
 
-K-Médoïdes s'exécute extrêmement rapidement ($\sim 0.03s$). À l'inverse, l'Affinity Propagation (AP) voit son temps de convergence propre exploser ($\sim 6s$ sur 3000 segments) en raison de sa complexité quadratique $\mathcal{O}(N^2)$. 
+Pour comparer équitablement les algorithmes, nous fixons $k=12$ pour tous dans un benchmark contrôlé (Figure \ref{fig:comparatif_global}). En production, l'AP détermine librement le nombre optimal de clusters ($k=10$, validé par bootstrap en section précédente). Ce benchmark expose un dilemme classique entre performance statistique et coût computationnel : le K-Médoïdes s'exécute quasi instantanément ($\sim 0.03s$) et affiche le meilleur score silhouette médian ($\sim 0.15$), là où l'Affinity Propagation (AP) voit son temps de convergence exploser ($\sim 6s$ pour $N=3000$) en raison de sa complexité quadratique $\mathcal{O}(N^2)$.
 
-Cependant, une inspection géographique révèle une faille structurelle majeure de K-Médoïdes sur nos données :
+Cependant, l'excellence statistique du K-Médoïdes cache une faille géographique majeure :
 \begin{itemize}
-    \item \textbf{L'anomalie du doublon K-Médoïdes :} L'algorithme place deux centres de clusters à seulement 5 unités d'écart, gaspillant un cluster pour désigner la même zone (l'Offlane Radiant) tout en ignorant la Top Lane.
-    \item \textbf{La supériorité géographique de l'AP :} L'AP identifie 10 zones géographiques distinctes, sans doublon constaté.
+    \item \textbf{L'anomalie du doublon :} L'algorithme a tendance à placer des centres de clusters extrêmement proches (parfois à moins de 5 unités), gaspillant un groupe pour désigner la même zone (ex: l'Offlane Radiant) tout en ignorant des secteurs entiers comme la Top Lane.
+    \item \textbf{La supériorité sémantique de l'AP :} Malgré sa lourdeur, l'AP produit le découpage le plus cohérent. Il parvient à diviser la carte en zones d'influence équilibrées et sans doublons, ce qui est indispensable pour l'étape suivante de fouille de motifs.
 \end{itemize}
 
-\textbf{Bilan :} Si K-Médoïdes est le seul algorithme viable pour le \textit{Big Data}, l'Affinity Propagation produit le découpage spatial le plus cohérent géographiquement. Notre étape PrefixSpan opérant sur un échantillon de 30 matchs, \textbf{nous utiliserons les clusters générés par l'Affinity Propagation} pour garantir l'extraction de stratégies sémantiquement valides.
+\textbf{Bilan :} Bien que le K-Médoïdes soit mathématiquement plus performant sur le score silhouette, il échoue à capturer la topologie réelle du jeu. Pour garantir l'extraction de stratégies sémantiquement valides, \textbf{nous retenons l'Affinity Propagation} sur un échantillon contrôlé de $N=3000$ segments.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{img/fig3_overview_k12.jpg}
+    \caption{Benchmark comparatif à $k=12$ fixé. À gauche, le score silhouette met en avant la supériorité statistique du K-Médoïdes. À droite, l'échelle logarithmique illustre l'explosion du temps de calcul de l'AP face à la montée en charge ($N$). En production, l'AP s'exécute sans contrainte sur $k$ et converge vers $k=10$.}
+    \label{fig:comparatif_global}
+\end{figure}
 
 % ------------------------------------------
 % 6.4 : PREFIXSPAN
@@ -564,6 +572,27 @@ Cependant, une inspection géographique révèle une faille structurelle majeure
 
 \subsubsection{Gestion de la Volumétrie et Malédiction des Séquences Longues}
 Sur des matchs complets, les séquences atteignent environ 65 transitions par joueur. PrefixSpan génère alors un très grand nombre de motifs (près de 100 000, dont la majorité triviaux avec un support $> 95\%$). Pour extraire des motifs plus discriminants, nous avons appliqué un seuil de support minimum de $15\%$ et réalisé la fouille sur un échantillon de 30 matchs. Une compression des états contigus (Run-Length Encoding) a été appliquée pour supprimer le bruit de stationnement.
+
+Un benchmark systématique (Figure~\ref{fig:prefixspan_benchmark}) permet de quantifier l'impact de chaque paramètre sur les performances de PrefixSpan et de justifier nos choix :
+
+\begin{itemize}
+    \item \textbf{Sensibilité au support minimum (haut-gauche) :} Le temps d'exécution décroît de façon exponentielle avec le seuil de support. À $5\%$, PrefixSpan requiert $\sim 1080s$ ($\approx 18$ min) ; à $15\%$, ce temps chute à $\sim 130s$ (facteur $\times 8$) ; au-delà de $30\%$, il devient négligeable ($< 10s$). Cette décroissance s'explique par l'élagage précoce de l'arbre de recherche : un seuil plus élevé permet à PrefixSpan de couper des branches entières dès qu'un préfixe devient infrequent, réduisant drastiquement l'espace exploré. Notre seuil de $15\%$ se situe au \textit{coude} de la courbe, là où le gain de temps par point de support supplémentaire commence à stagner, ce qui en fait le point d'équilibre optimal entre richesse des motifs et temps de calcul.
+
+    \item \textbf{Explosion combinatoire avec la longueur maximale (haut-droite) :} Le nombre de motifs croît de façon quasi exponentielle avec la longueur autorisée : $\sim 2\,000$ motifs pour une longueur maximale de 2, $\sim 45\,000$ pour 3, $\sim 130\,000$ pour 4, et $\sim 155\,000$ pour 5. Le saut de longueur 2 à 3 (facteur $\times 22$) est le plus violent, car c'est à ce stade que les combinaisons entre les 10 clusters explosent. Au-delà de 4, la croissance ralentit : les motifs longs sont rares dans nos séquences de $\sim 65$ transitions. Nous limitons l'extraction à une longueur $\le 3$, ce qui capture les rotations stratégiques à 3 zones (ex: Jungle $\rightarrow$ Mid $\rightarrow$ Rivière) tout en maintenant le volume sous $50\,000$ motifs, analysable humainement.
+
+    \item \textbf{Scalabilité linéaire avec la taille de la base (bas-gauche) :} Le temps de calcul croît de façon quasi linéaire avec le nombre de séquences : $\sim 60s$ pour 600 séquences, $\sim 140s$ pour 1250, $\sim 205s$ pour 1800, et $\sim 290s$ pour 2500. L'absence de comportement quadratique ou exponentiel confirme que PrefixSpan conserve une complexité pratique raisonnable sur nos données. Par extrapolation linéaire, traiter l'intégralité de notre corpus (70 matchs, $\sim 700$ séquences) à $15\%$ de support coûterait environ $70s$, ce qui reste parfaitement viable. Notre échantillon de 30 matchs ($\sim 300$ séquences) se situe donc bien en deçà de toute limite computationnelle.
+
+    \item \textbf{Empreinte mémoire (bas-droite) :} La consommation mémoire présente un profil de décroissance encore plus brutal que le temps : $\sim 22$~Mo à $10\%$, puis une chute abrupte sous $1$~Mo dès $30\%$. Ce comportement de \textit{cliff} s'explique par la taille de la base de données projetées que PrefixSpan maintient en mémoire : à faible support, des milliers de préfixes infrequents sont conservés, gonflant la mémoire. À $15\%$, l'empreinte est d'environ $5$--$10$~Mo, ce qui est compatible avec un déploiement sur n'importe quelle machine standard sans contrainte matérielle.
+\end{itemize}
+
+\textbf{Synthèse du benchmark :} Ces quatre courbes convergent vers une même conclusion : le paramétrage retenu ($\text{support} = 15\%$, $\text{longueur} \le 3$, $N \approx 300$ séquences) se situe systématiquement dans une zone de compromis favorable, loin des régimes d'explosion combinatoire ou de saturation mémoire. PrefixSpan, sous ces conditions, s'exécute en $\sim 2$ minutes avec une empreinte mémoire négligeable, ce qui valide sa viabilité comme étape finale de notre pipeline d'analyse.
+
+\begin{figure}[H]
+    \centering
+    \includegraphics[width=0.95\textwidth]{img/prefixspan_benchmark.png}
+    \caption{Benchmark de PrefixSpan selon quatre axes. \textit{Haut-gauche} : décroissance exponentielle du temps d'exécution avec le support minimum ; le coude à $15\%$ justifie notre seuil. \textit{Haut-droite} : explosion combinatoire du nombre de motifs avec la longueur maximale ; le saut entre 2 et 3 (facteur $\times 22$) est le plus critique. \textit{Bas-gauche} : scalabilité quasi linéaire avec la taille de la base de séquences. \textit{Bas-droite} : empreinte mémoire en chute libre au-delà de $20\%$ de support.}
+    \label{fig:prefixspan_benchmark}
+\end{figure}
 
 \subsubsection{Analyse des Motifs Séquentiels (PrefixSpan) et Graphe de Markov}
 
@@ -702,7 +731,7 @@ L'essence même d'un MOBA réside dans la coordination d'équipe et l'asymétrie
 % ==========================================
 % BIBLIOGRAPHIE
 % ==========================================
-\begin{thebibliography}{9}
+\begin{thebibliography}{99}
 
 \bibitem{lee2007}
 J.-G. Lee, J. Han, and K.-Y. Whang. 
@@ -710,9 +739,9 @@ J.-G. Lee, J. Han, and K.-Y. Whang.
 In Proceedings of the 2007 ACM SIGMOD international conference on Management of data, pages 593--604, 2007.
 
 \bibitem{pei2001}
-J. Pei et al. 
+J. Pei, J. Han, B. Mortazavi-Asl, H. Pinto, Q. Chen, U. Dayal, and M.-C. Hsu.
 \textit{PrefixSpan: Mining Sequential Patterns Efficiently by Prefix-Projected Pattern Growth}. 
-In Proceedings of the 17th International Conference on Data Engineering (ICDE '01), pages 215--224, 2001.
+In Proceedings of the 17th International Conference on Data Engineering (ICDE~'01), pages 215--224, 2001.
 
 \bibitem{zheng}
 Y. Zheng. 
@@ -743,6 +772,31 @@ Journal of Computational and Applied Mathematics, 20:53--65, 1987.
 J. Rissanen.
 \textit{Modeling by Shortest Data Description}.
 Automatica, 14(5):465--471, 1978.
+
+\bibitem{agrawal1995}
+R. Agrawal and R. Srikant.
+\textit{Mining Sequential Patterns}.
+In Proceedings of the 11th International Conference on Data Engineering (ICDE~'95), pages 3--14, 1995.
+
+\bibitem{kaufman1990}
+L. Kaufman and P. J. Rousseeuw.
+\textit{Finding Groups in Data: An Introduction to Cluster Analysis}.
+John Wiley \& Sons, 1990.
+
+\bibitem{ester1996}
+M. Ester, H.-P. Kriegel, J. Sander, and X. Xu.
+\textit{A Density-Based Algorithm for Discovering Clusters in Large Spatial Databases with Noise}.
+In Proceedings of the 2nd International Conference on Knowledge Discovery and Data Mining (KDD~'96), pages 226--231, 1996.
+
+\bibitem{opendota}
+OpenDota.
+\textit{OpenDota API Documentation}.
+\url{https://docs.opendota.com/}, consulté en 2025.
+
+\bibitem{han2011}
+J. Han, J. Pei, and M. Kamber.
+\textit{Data Mining: Concepts and Techniques}.
+Morgan Kaufmann, 3rd edition, 2011.
 
 \end{thebibliography}
 
