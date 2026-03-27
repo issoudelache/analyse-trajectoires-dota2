@@ -605,14 +605,14 @@ class AppModel:
 
     def run_mining(
         self,
-        min_support: int = 10,
-        max_length: int = 8,
+        min_support: float = 0.2,
+        max_length: int = 5,
         progress_callback=None,
     ) -> MiningResult:
         """Lance PrefixSpan sur le fichier sequences.spmf.
 
         Args:
-            min_support: Support minimum pour les motifs
+            min_support: Support minimum relatif (0.2 = 20% des sequences)
             max_length: Longueur maximale des motifs
             progress_callback: Callback (current, total, elapsed_sec, num_patterns)
         """

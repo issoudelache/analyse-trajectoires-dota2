@@ -166,12 +166,13 @@ class PipelinePage(BasePage):
         row_ps = ctk.CTkFrame(cfg, fg_color="transparent")
         row_ps.pack(fill="x", pady=4)
 
-        ctk.CTkLabel(row_ps, text="min_support", text_color=TEXT_DIM, font=ctk.CTkFont(size=11)).pack(side="left")
-        self._min_support_var = ctk.StringVar(value="10")
-        ctk.CTkEntry(row_ps, textvariable=self._min_support_var, width=60, height=28).pack(side="left", padx=(6, 12))
+        ctk.CTkLabel(row_ps, text="min_support (%)", text_color=TEXT_DIM, font=ctk.CTkFont(size=11)).pack(side="left")
+        self._min_support_var = ctk.StringVar(value="0.2")
+        ctk.CTkEntry(row_ps, textvariable=self._min_support_var, width=60, height=28).pack(side="left", padx=(6, 4))
+        ctk.CTkLabel(row_ps, text="(0.2=20%)", text_color=TEXT_DIM, font=ctk.CTkFont(size=9)).pack(side="left", padx=(0, 8))
 
         ctk.CTkLabel(row_ps, text="max_len", text_color=TEXT_DIM, font=ctk.CTkFont(size=11)).pack(side="left")
-        self._max_length_var = ctk.StringVar(value="8")
+        self._max_length_var = ctk.StringVar(value="5")
         ctk.CTkEntry(row_ps, textvariable=self._max_length_var, width=60, height=28).pack(side="left", padx=6)
 
         # Bouton lancer
@@ -277,13 +278,13 @@ class PipelinePage(BasePage):
                 pass
 
         try:
-            min_support = int(self._min_support_var.get())
+            min_support = float(self._min_support_var.get())
         except ValueError:
-            min_support = 10
+            min_support = 0.2
         try:
             max_length = int(self._max_length_var.get())
         except ValueError:
-            max_length = 8
+            max_length = 5
 
         self.controller.start_pipeline_page(
             w_error=w_error,

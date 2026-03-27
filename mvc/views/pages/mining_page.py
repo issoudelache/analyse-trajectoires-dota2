@@ -89,15 +89,16 @@ class MiningPage(BasePage):
         row1 = ctk.CTkFrame(params_grid, fg_color="transparent")
         row1.pack(fill="x", pady=3)
 
-        ctk.CTkLabel(row1, text="min_support:", width=100, anchor="w").pack(side="left")
+        ctk.CTkLabel(row1, text="min_support (%):", width=120, anchor="w").pack(side="left")
         self.support_entry = ctk.CTkEntry(row1, width=80)
-        self.support_entry.pack(side="left", padx=(5, 20))
-        self.support_entry.insert(0, "10")
+        self.support_entry.pack(side="left", padx=(5, 5))
+        self.support_entry.insert(0, "0.2")
+        ctk.CTkLabel(row1, text="(0.2 = 20%)", font=ctk.CTkFont(size=10), text_color=TEXT_DIM).pack(side="left", padx=(0, 15))
 
         ctk.CTkLabel(row1, text="max_length:", width=100, anchor="w").pack(side="left")
         self.maxlen_entry = ctk.CTkEntry(row1, width=80)
         self.maxlen_entry.pack(side="left", padx=5)
-        self.maxlen_entry.insert(0, "8")
+        self.maxlen_entry.insert(0, "5")
 
         self.mine_btn = ctk.CTkButton(
             mining_frame,
@@ -240,10 +241,10 @@ class MiningPage(BasePage):
 
     def _on_mine(self):
         try:
-            min_sup = int(self.support_entry.get())
+            min_sup = float(self.support_entry.get())
             max_len = int(self.maxlen_entry.get())
         except ValueError:
-            self.mine_status.configure(text="Parametres invalides")
+            self.mine_status.configure(text="Parametres invalides (min_support: float, max_length: entier)")
             return
 
         self.mine_btn.configure(state="disabled", text="Calcul...")

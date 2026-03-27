@@ -167,7 +167,7 @@ class AppController:
 
     # ── PrefixSpan ────────────────────────────────────────────────────────
 
-    def start_mining(self, min_support: int = 10, max_length: int = 8):
+    def start_mining(self, min_support: float = 0.2, max_length: int = 5):
         """Lance PrefixSpan dans un thread séparé (mode parallèle, sans callback)."""
 
         def _worker():
@@ -218,8 +218,8 @@ class AppController:
         w_error: float,
         algo: str = "affinity",
         cluster_kwargs: dict = None,
-        min_support: int = 10,
-        max_length: int = 8,
+        min_support: float = 0.2,
+        max_length: int = 5,
         max_matches: int = 0,
     ):
         """Pipeline complet avec compression parallèle et paramètres clustering.
