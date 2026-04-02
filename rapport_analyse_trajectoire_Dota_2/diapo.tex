@@ -70,7 +70,7 @@
 % --- SLIDE 1 : Contexte ---
 \begin{frame}{Contexte : DotA 2 et les données}
 
-\begin{columns}[T]
+\begin{columns}[c]
 \begin{column}{0.45\textwidth}
     \textbf{DotA 2} — MOBA compétitif, 2$\times$5 joueurs
 
@@ -92,7 +92,10 @@
 \end{column}
 \begin{column}{0.52\textwidth}
     \centering
-    \includegraphics[height=0.55\textheight, keepaspectratio]{img/canvas.png}\\[0.1cm]
+    \makebox[\linewidth][c]{
+        \includegraphics[width=1.9\linewidth]{img/canvas.png}
+    }\\ % Fin de la ligne
+    \vspace{-0.8cm} % Remonte le texte de 0.8 cm (ajuste la valeur si besoin)
     {\scriptsize Carte officielle de DotA 2}
 \end{column}
 \end{columns}
@@ -245,10 +248,7 @@
         \item \texttt{scipy} — Hausdorff, distances spatiales
     \end{itemize}
 
-    \vspace{0.15cm}
-    \begin{alertblock}{Bilan}
-    {\small Zéro dépendance lourde !}
-    \end{alertblock}
+    
 
 \end{column}
 \end{columns}
@@ -336,54 +336,41 @@ La \textbf{description la plus courte} qui reste \textbf{fidèle} à la trajecto
 
 \end{frame}
 
+% --- SLIDE : CSV brut vs JSON compressé ---
+\begin{frame}{Données : du CSV brut au JSON compressé}
+
+\begin{columns}[c]
+\begin{column}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth, height=0.72\textheight, keepaspectratio]{img/extrait_csv.jpg}
+
+    \vspace{0.1cm}
+    \textbf{Entrée — CSV brut}\\
+    {\scriptsize $(x, y)$ toutes les 0{,}03\,s $\to$ milliers de lignes}
+\end{column}
+\begin{column}{0.04\textwidth}
+    \centering
+    {\LARGE $\boldsymbol{\to}$}
+\end{column}
+\begin{column}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth, height=0.72\textheight, keepaspectratio]{img/json_extrait.jpg}
+
+    \vspace{0.1cm}
+    \textbf{Sortie — JSON compressé}\\
+    {\scriptsize Segments + labels de zones $\to$ exploitable par PrefixSpan}
+\end{column}
+\end{columns}
+
+\centering
+{\small Le pipeline transforme un flux brut de coordonnées en \textcolor{dota_green}{\textbf{séquences symboliques}} prêtes pour le \textit{mining}.}
+
+\end{frame}
+
 % ============================================================================
 % PARTIE 3 — TRANSITION VERS LES EXPÉRIMENTATIONS
 % ============================================================================
 \section{Expérimentations}
-
-% --- SLIDE 6 : Transition ---
-\begin{frame}{Validation expérimentale — Démarche}
-
-\centering
-{\large Comment \textbf{prouver} que le pipeline produit des résultats fiables ?}
-
-\vspace{0.3cm}
-
-\begin{columns}[T]
-\begin{column}{0.48\textwidth}
-
-    \textbf{Exp. 1 — Compression MDL}
-    \begin{itemize}\setlength{\itemsep}{1pt}
-        \item Corpus : \textbf{70 matchs} réels
-        \item Vérif. erreur max $< w_{error}$ \textcolor{dota_green}{\checkmark}
-        \item Robustesse au bruit gaussien
-        \item Comparaison : \textit{Uniforme}, \textit{Douglas-Peucker}
-        \item Sensibilité de $w_{error}$
-    \end{itemize}
-\end{column}
-\begin{column}{0.48\textwidth}
-
-    \textbf{Exp. 2 — Clustering}
-    \begin{itemize}\setlength{\itemsep}{1pt}
-        \item Recherche du $k$ optimal (coude)
-        \item K-Means \textit{vs} K-Médoïdes \textit{vs} AP
-        \item Sensibilité à $N$ (AP)
-    \end{itemize}
-
-    \vspace{0.2cm}
-    \textbf{Exp. 3 — Fouille PrefixSpan}
-    \begin{itemize}\setlength{\itemsep}{1pt}
-        \item Extraction de motifs séquentiels
-        \item Interprétation stratégique sur carte
-    \end{itemize}
-\end{column}
-\end{columns}
-
-\vspace{0.2cm}
-\centering
-{\footnotesize $\Rightarrow$ Chaque choix de paramètre est \textbf{justifié expérimentalement} (pas de valeur arbitraire).}
-
-\end{frame}
 
 % --- SLIDE : MDL vs Baselines ---
 \begin{frame}{Exp. 1 — MDL \textit{vs} Uniforme \textit{vs} Douglas-Peucker}
@@ -492,6 +479,38 @@ La \textbf{description la plus courte} qui reste \textbf{fidèle} à la trajecto
 
 \end{frame}
 
+% --- SLIDE : Triptyque robustesse visuelle ---
+\begin{frame}{Exp. 3b — Visualisation : trajectoire propre $\to$ bruitée $\to$ filtrée}
+
+\centering
+\includegraphics[width=0.95\linewidth, height=0.65\textheight, keepaspectratio]{img/triptych_w12_sigma3.jpg}
+
+\vspace{0.2cm}
+
+\begin{columns}[T]
+\begin{column}{0.30\textwidth}
+    \centering
+    \textcolor{dota_blue}{\textbf{1. Originale}}\\
+    {\small 67 points, trajectoire nette}
+\end{column}
+\begin{column}{0.30\textwidth}
+    \centering
+    \textcolor{gray}{\textbf{2. Bruit $\sigma=3$}}\\
+    {\small Points dispersés, signal noyé}
+\end{column}
+\begin{column}{0.30\textwidth}
+    \centering
+    \textcolor{dota_accent}{\textbf{3. Après MDL}}\\
+    {\small 5 segments, structure retrouvée}
+\end{column}
+\end{columns}
+
+\vspace{0.15cm}
+\centering
+{\small MDL absorbe le bruit et \textcolor{dota_green}{\textbf{restitue la même structure}} que la trajectoire propre.}
+
+\end{frame}
+
 % --- SLIDE : Transition compression → clustering ---
 \begin{frame}{Compression $\to$ Clustering : quel impact ?}
 \small
@@ -516,33 +535,6 @@ La \textbf{description la plus courte} qui reste \textbf{fidèle} à la trajecto
 % PARTIE 4 — CLUSTERING
 % ============================================================================
 \section{Clustering Spatial}
-
-% --- SLIDE : Optimisation de k ---
-\begin{frame}{Optimisation de $k$ : compromis topologie / sémantique}
-\small
-\begin{columns}[T]
-\begin{column}{0.55\textwidth}
-    \centering
-    \includegraphics[width=\linewidth, height=0.55\textheight, keepaspectratio]{img/fig1_3_panel_metrics_k.jpg}\\
-    {\scriptsize Recherche du $k$ optimal ($k \in [2, 30]$)}
-\end{column}
-\begin{column}{0.42\textwidth}
-    \textbf{Méthode du coude :}
-    \begin{itemize}\setlength{\itemsep}{1pt}
-        \item \textbf{Davies-Bouldin} : minimum local à $k \approx 10$ \textcolor{dota_green}{\checkmark}
-        \item \textbf{Silhouette} : stabilisation en plateau
-    \end{itemize}
-
-    \vspace{0.15cm}
-    \begin{block}{Validation par PrefixSpan}
-        {\small À $k=10$, volume de motifs \textbf{riche mais maîtrisé} : pas d'explosion combinatoire.}
-    \end{block}
-
-    \vspace{0.1cm}
-    $\Rightarrow$ \textbf{Choix final : $k = 10$ zones}
-\end{column}
-\end{columns}
-\end{frame}
 
 % --- SLIDE : Comparaison des algorithmes ---
 \begin{frame}{Évaluation comparative des algorithmes de clustering}
@@ -572,6 +564,33 @@ La \textbf{description la plus courte} qui reste \textbf{fidèle} à la trajecto
     \begin{alertblock}{Observation}
         {\small K-Médoïdes et AP \textbf{doublent} le score Silhouette de K-Means grâce à TRACLUS.}
     \end{alertblock}
+\end{column}
+\end{columns}
+\end{frame}
+
+% --- SLIDE : Optimisation de k ---
+\begin{frame}{Optimisation de $k$ : compromis topologie / sémantique}
+\small
+\begin{columns}[T]
+\begin{column}{0.55\textwidth}
+    \centering
+    \includegraphics[width=\linewidth, height=0.55\textheight, keepaspectratio]{img/fig1_3_panel_metrics_k.jpg}\\
+    {\scriptsize Recherche du $k$ optimal ($k \in [2, 30]$)}
+\end{column}
+\begin{column}{0.42\textwidth}
+    \textbf{Méthode du coude :}
+    \begin{itemize}\setlength{\itemsep}{1pt}
+        \item \textbf{Davies-Bouldin} : minimum local à $k \approx 10$ \textcolor{dota_green}{\checkmark}
+        \item \textbf{Silhouette} : stabilisation en plateau
+    \end{itemize}
+
+    \vspace{0.15cm}
+    \begin{block}{Validation par PrefixSpan}
+        {\small À $k=10$, volume de motifs \textbf{riche mais maîtrisé} : pas d'explosion combinatoire.}
+    \end{block}
+
+    \vspace{0.1cm}
+    $\Rightarrow$ \textbf{Choix final : $k = 10$ zones}
 \end{column}
 \end{columns}
 \end{frame}
@@ -628,54 +647,34 @@ La \textbf{description la plus courte} qui reste \textbf{fidèle} à la trajecto
 \end{columns}
 \end{frame}
 
-% --- SLIDE : Le paradoxe du K-Médoïdes ---
-\begin{frame}{Le paradoxe : pourquoi rejeter le K-Médoïdes ?}
+% --- SLIDE : Paradoxe K-Médoïdes + Choix final AP ---
+\begin{frame}{Pourquoi l'AP malgré le K-Médoïdes ?}
 \small
 \begin{columns}[c]
-\begin{column}{0.62\textwidth}
-    \includegraphics[width=\linewidth, height=0.82\textheight, keepaspectratio]{img/fig3_1_clusters_map.jpg}\\
-    {\scriptsize L'AP identifie 10 zones distinctes, sans doublons.}
-\end{column}
-\begin{column}{0.36\textwidth}
-    \textbf{Le problème des doublons :}
-    \begin{itemize}\setlength{\itemsep}{2pt}
-        \item Deux centres à \textbf{$< 5$ unités} d'écart
-        \item \textcolor{dota_accent}{Gaspillage} : même zone couverte deux fois (Offlane Radiant)
-        \item Zones entières ignorées (Top Lane)
-    \end{itemize}
-
-    \vspace{0.15cm}
-    \begin{alertblock}{Limite du Silhouette}
-        {\small Un bon score statistique $\neq$ \textbf{cohérence géographique}. K-Médoïdes optimise la compacité, pas la couverture.}
-    \end{alertblock}
-\end{column}
-\end{columns}
-\end{frame}
-
-% --- SLIDE : Choix Final et paramétrage AP ---
-\begin{frame}{Choix final : Affinity Propagation paramétré}
-\small
-\begin{columns}[c]
-\begin{column}{0.62\textwidth}
+\begin{column}{0.55\textwidth}
     \includegraphics[width=\linewidth, height=0.82\textheight, keepaspectratio]{img/fig3_1_clusters_map.jpg}\\
     {\scriptsize Les 10 macro-zones découvertes par l'AP}
 \end{column}
-\begin{column}{0.36\textwidth}
-    \begin{exampleblock}{Pourquoi l'AP malgré son coût ?}
-        {\small Seul algorithme produisant un découpage \textbf{géographiquement cohérent}, servant d'\textbf{alphabet} pour PrefixSpan.}
-    \end{exampleblock}
+\begin{column}{0.43\textwidth}
+    \textbf{\textcolor{dota_accent}{Le paradoxe K-Médoïdes :}}
+    \begin{itemize}\setlength{\itemsep}{1pt}
+        \item Meilleur Silhouette, mais \textbf{doublons} : 2 centres à $< 5$ unités
+        \item Zones entières ignorées (Top Lane)
+        \item Bon score $\neq$ cohérence géographique
+    \end{itemize}
 
-    \vspace{0.1cm}
-    \textbf{Paramétrage retenu :}
-    \begin{itemize}\setlength{\itemsep}{2pt}
-        \item \textbf{$N = 3\,000$} segments (convergence)
-        \item \textbf{Damping} $= 0.7$ (stabilisation)
-        \item \textbf{Préférence} $= -5\,000$ (cible $k \approx 10$)
+    \vspace{0.15cm}
+    \textbf{\textcolor{dota_green}{Paramétrage AP retenu :}}
+    \begin{itemize}\setlength{\itemsep}{1pt}
+        \item $N = 3\,000$ segments
+        \item Damping $= 0.7$
+        \item Préférence $= -5\,000$ ($\to k \approx 10$)
     \end{itemize}
 
     \vspace{0.1cm}
-    \centering
-    \textcolor{dota_green}{\textbf{$\Rightarrow$ Découpage 100\% guidé par la donnée}}
+    \begin{alertblock}{Verdict}
+    {\small AP = seul algo avec \textbf{couverture complète} de la carte, servant d'\textbf{alphabet} pour PrefixSpan.}
+    \end{alertblock}
 \end{column}
 \end{columns}
 \end{frame}
@@ -722,6 +721,36 @@ La \textbf{description la plus courte} qui reste \textbf{fidèle} à la trajecto
         \column{0.55\textwidth}
         \includegraphics[width=\linewidth, height=0.7\textheight, keepaspectratio]{img/Graphe_des_Transitions.jpg}
     \end{columns}
+\end{frame}
+
+\begin{frame}{Résultats — Stratégies découvertes sur la carte}
+\small
+\begin{columns}[T]
+\begin{column}{0.48\textwidth}
+    \centering
+    \includegraphics[width=\linewidth, height=0.8\textheight, keepaspectratio]{img/fig3_1_clusters_map.jpg}\\[0.1cm]
+    {\scriptsize Les 10 macro-zones découvertes par l'AP}
+\end{column}
+\begin{column}{0.50\textwidth}
+    \textbf{\textcolor{dota_accent}{3 stratégies émergentes :}}
+
+    \vspace{0.125cm}
+    \textbf{1. Contrôle des runes (C8$\leftrightarrow$C1$\leftrightarrow$C7)}\\
+    {\small La rivière (C8) est le \textbf{hub central} : 2\,400+ transitions vers mid. Les joueurs font des rotations constamment pour sécuriser les runes.}
+
+    \vspace{0.125cm}
+    \textbf{2. Corridor jungle (C4$\leftrightarrow$C2$\leftrightarrow$C9)}\\
+    {\small Circuit de \textit{farming} : les joueurs enchaînent les camps de jungle en boucle (1\,200+ transitions C4$\to$C2).}
+
+    \vspace{0.125cm}
+    \textbf{3. Isolement des bases (C3, C5)}\\
+    {\small Les zones de base (Radiant C3, Dire C5) sont \textbf{déconnectées} du graphe central — les joueurs n'y retournent qu'en early game ou en défense.}
+
+    \begin{alertblock}{Conclusion}
+    {\small Les stratégies émergent \textbf{sans supervision}, cohérentes avec la méta DotA 2.}
+    \end{alertblock}
+\end{column}
+\end{columns}
 \end{frame}
 
 % ============================================================================
